@@ -4,6 +4,12 @@ import type { Contract, Rule, Severity, PatternMatch } from "./types";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
 const VALID_TYPES = ["pattern", "semgrep"] as const;
+// Only the v1 schema is understood today. A typo'd/forward-versioned config must
+// fail closed rather than silently mis-parsing (consolidated audit sweep).
+const SUPPORTED_VERSIONS = new Set([1]);
+// Bound the ruleset so a malicious/buggy archsentry.yml can't trigger unbounded
+// scan work (consolidated audit sweep).
+const MAX_RULES = 1000;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((x) => typeof x === "string");
@@ -28,8 +34,18 @@ export function parseContract(raw: string): Contract {
   if (typeof root.version !== "number") {
     throw new ConfigError('Config is missing a numeric "version" field.');
   }
+  if (!SUPPORTED_VERSIONS.has(root.version)) {
+    throw new ConfigError(
+      `Unsupported config version ${root.version}. Supported versions: ${[...SUPPORTED_VERSIONS].join(", ")}.`,
+    );
+  }
   if (!Array.isArray(root.rules) || root.rules.length === 0) {
     throw new ConfigError('Config "rules" must be a non-empty array.');
+  }
+  if (root.rules.length > MAX_RULES) {
+    throw new ConfigError(
+      `Config has ${root.rules.length} rules; the maximum is ${MAX_RULES}. Split into multiple configs or raise ARCHSENTRY_MAX_RULES.`,
+    );
   }
 
   const rules = root.rules.map((r, i) => validateRule(r, i));
