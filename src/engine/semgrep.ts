@@ -1,22 +1,24 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, isAbsolute, normalize, sep } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { stringify } from "yaml";
 import type { Rule } from "../config/types";
 import type { RuleEngine, SourceFile, Violation } from "./types";
 import { envInt } from "../util/env";
 
-let _available: boolean | null = null;
-function semgrepAvailable(): boolean {
-  if (_available !== null) return _available;
-  try {
-    execFileSync("semgrep", ["--version"], { stdio: "ignore" });
-    _available = true;
-  } catch {
-    _available = false;
+// Async, memoized availability probe. Replaces the old synchronous
+// execFileSync("semgrep", ["--version"]) that blocked the event loop on the
+// first scan of every worker (audit P1-3). It only ever runs when a `semgrep`
+// rule actually exists in the contract.
+let _probe: Promise<boolean> | null = null;
+export function probeSemgrep(): Promise<boolean> {
+  if (!_probe) {
+    _probe = new Promise<boolean>((resolveProbe) => {
+      execFile("semgrep", ["--version"], (err) => resolveProbe(!err));
+    });
   }
-  return _available;
+  return _probe;
 }
 
 function escapeRegex(s: string): string {
@@ -42,13 +44,17 @@ export function toSemgrepRule(rule: Rule): Record<string, unknown> {
 }
 
 // Contain a file path inside `dir`. File paths come from the PR (attacker-
-// controlled in the GitHub App path) or disk, so we must reject absolute paths
-// and any `..` sequence that escapes the temp dir — otherwise writeFileSync
-// would let a malicious PR write arbitrary files on the bot host.
+// controlled in the GitHub App path) or disk, so we must reject anything that
+// escapes the temp dir — otherwise writeFileSync would let a malicious PR write
+// arbitrary files on the bot host. Implemented with path.resolve so it is
+// correct on Windows too: a device-relative path like `C:foo` or a UNC path
+// like `\\server\share` is resolved by resolve() and then fails the prefix
+// check, instead of being silently joined under the temp root (audit P1-2).
 export function safeJoin(dir: string, p: string): string | null {
-  if (isAbsolute(p)) return null;
-  const abs = join(dir, normalize(p));
-  if (abs !== dir && !abs.startsWith(dir + sep)) return null;
+  if (typeof p !== "string" || p.length === 0) return null;
+  const root = resolve(dir);
+  const abs = resolve(root, p);
+  if (abs !== root && !abs.startsWith(root + sep)) return null;
   return abs;
 }
 
@@ -63,15 +69,18 @@ export class SemgrepEngine implements RuleEngine {
   // source tree and hand it over via `baseDir` (audit P2-B).
   needsDisk = true;
 
-  // Claims `semgrep` rules always, and `pattern` rules only when the CLI exists
-  // — so it transparently takes over from PatternEngine once Semgrep is installed.
+  // Only claims `semgrep` rules. Pattern rules always use the zero-dep
+  // PatternEngine; we never probe for the CLI here (audit P1-3).
   supports(type: string): boolean {
-    if (type === "semgrep") return true;
-    if (type === "pattern") return semgrepAvailable();
-    return false;
+    return type === "semgrep";
   }
 
-  async scan(files: SourceFile[], rule: Rule, baseDir?: string): Promise<Violation[]> {
+  async scan(
+    files: SourceFile[],
+    rule: Rule,
+    baseDir?: string,
+    signal?: AbortSignal,
+  ): Promise<Violation[]> {
     let sgRule: Record<string, unknown>;
     if (rule.type === "pattern") {
       sgRule = toSemgrepRule(rule);
@@ -106,7 +115,7 @@ export class SemgrepEngine implements RuleEngine {
       const ruleFile = join(dir, "rule.yml");
       writeFileSync(ruleFile, stringify({ rules: [sgRule] }));
 
-      const stdout = await runSemgrep(ruleFile, dir);
+      const stdout = await runSemgrep(ruleFile, dir, signal);
       const parsed = JSON.parse(stdout || '{"results":[]}') as { results?: SemgrepResult[] };
       const normDir = dir.replace(/\\/g, "/");
       return (parsed.results ?? []).map((r) => {
@@ -131,12 +140,15 @@ export class SemgrepEngine implements RuleEngine {
 // pin the bot host indefinitely (audit H2). Overridable via env.
 const SEMGREP_TIMEOUT_MS = envInt("ARCHSENTRY_SEMGREP_TIMEOUT_MS", 120_000);
 
-function runSemgrep(ruleFile: string, dir: string): Promise<string> {
+function runSemgrep(ruleFile: string, dir: string, signal?: AbortSignal): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     execFile(
       "semgrep",
       ["scan", "--config", ruleFile, "--json", "--quiet", dir],
-      { timeout: SEMGREP_TIMEOUT_MS },
+      // `signal` aborts (and kills) the child when the caller's deadline fires,
+      // so a timed-out scan doesn't leave a semgrep process running for up to
+      // its own 120s timeout (audit P2-2).
+      { timeout: SEMGREP_TIMEOUT_MS, signal },
       (err, stdout, stderr) => {
         // A timeout returns err with code ETIMEDOUT (and the child killed). Give
         // a specific message rather than a generic "Semgrep failed".

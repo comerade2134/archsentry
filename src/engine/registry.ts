@@ -4,32 +4,32 @@ import { join, dirname } from "node:path";
 import type { Contract } from "../config/types";
 import type { RuleEngine, Violation, SourceFile } from "./types";
 import { PatternEngine } from "./pattern-engine";
-import { SemgrepEngine, safeJoin } from "./semgrep";
+import { SemgrepEngine, safeJoin, probeSemgrep } from "./semgrep";
 
 export class EngineRegistry {
-  private engines: RuleEngine[] = [];
-
-  constructor() {
-    // SemgrepEngine first: it takes over `pattern` rules when the CLI is present,
-    // otherwise PatternEngine (zero-dep) handles them.
-    this.register(new SemgrepEngine());
-    this.register(new PatternEngine());
+  // Resolve the engine set for a given contract. Semgrep is only registered
+  // when (a) the contract actually contains a `semgrep` rule AND (b) the CLI is
+  // available — determined by an async probe, so we never block the event loop
+  // with a synchronous subprocess spawn (audit P1-3). PatternEngine is always
+  // present and zero-dep.
+  private async resolveEngines(contract: Contract): Promise<RuleEngine[]> {
+    const engines: RuleEngine[] = [];
+    if (contract.rules.some((r) => r.type === "semgrep") && (await probeSemgrep())) {
+      engines.push(new SemgrepEngine());
+    }
+    engines.push(new PatternEngine());
+    return engines;
   }
 
-  register(engine: RuleEngine): void {
-    this.engines.push(engine);
-  }
+  async run(files: SourceFile[], contract: Contract, signal?: AbortSignal): Promise<Violation[]> {
+    const engines = await this.resolveEngines(contract);
+    const engineFor = (t: string) => engines.find((e) => e.supports(t));
 
-  private engineFor(type: string): RuleEngine | undefined {
-    return this.engines.find((e) => e.supports(type));
-  }
-
-  async run(files: SourceFile[], contract: Contract): Promise<Violation[]> {
     // Only materialize the source tree to disk when some rule will be handled by
     // a disk-based engine (Semgrep). Zero-dep pattern-only scans never touch the
     // filesystem (audit P2-B). Engines that need disk (Semgrep) fall back to
     // writing their own temp dir when `baseDir` is undefined.
-    const needsDisk = contract.rules.some((r) => this.engineFor(r.type)?.needsDisk === true);
+    const needsDisk = engines.some((e) => e.needsDisk === true);
     const dir = needsDisk ? mkdtempSync(join(tmpdir(), "archsentry-")) : undefined;
     try {
       if (dir) {
@@ -42,14 +42,14 @@ export class EngineRegistry {
       }
       const all: Violation[] = [];
       for (const rule of contract.rules) {
-        const engine = this.engineFor(rule.type);
+        const engine = engineFor(rule.type);
         if (!engine) {
           console.warn(
             `[warn] no engine for rule type "${rule.type}" (rule "${rule.id}") — skipping`,
           );
           continue;
         }
-        all.push(...(await engine.scan(files, rule, dir)));
+        all.push(...(await engine.scan(files, rule, dir, signal)));
       }
       return all;
     } finally {

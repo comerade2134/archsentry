@@ -139,10 +139,22 @@ function validateRule(raw: unknown, index: number): Rule {
     if (match.exclude !== undefined && !isStringArray(match.exclude)) {
       throw new ConfigError(`${where}: "match.exclude" must be an array of glob strings.`);
     }
+    if (match.regex !== undefined && typeof match.regex !== "boolean") {
+      throw new ConfigError(`${where}: "match.regex" must be a boolean.`);
+    }
   }
 
   if (r.type === "semgrep") {
     validateSemgrepRule(r.semgrep, where);
+  }
+
+  // Surface typos / unknown keys instead of silently dropping them (audit P3-3).
+  // A mis-typed `sev: warn` or `discription: ...` would otherwise be ignored and
+  // the rule would run with surprising defaults.
+  const KNOWN = new Set(["id", "type", "severity", "description", "match", "semgrep"]);
+  const extra = Object.keys(r).filter((k) => !KNOWN.has(k));
+  if (extra.length) {
+    console.warn(`[archsentry] ${where} has unknown key(s): ${extra.join(", ")} (ignored)`);
   }
 
   // Centralize the default severity so every engine sees the same value.

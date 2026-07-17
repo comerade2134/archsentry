@@ -27,8 +27,14 @@ export interface RuleEngine {
   // Always async so engines can yield and so callers await uniformly (audit P2-A).
   // `baseDir`, when provided, is a directory that already contains the source
   // tree (written once by the registry) — engines that need disk (Semgrep) scan
-  // there instead of re-materializing files per rule.
-  scan(files: SourceFile[], rule: Rule, baseDir?: string): Promise<Violation[]>;
+  // there instead of re-materializing files per rule. `signal` lets a caller
+  // abort a long-running scan (e.g. an aborted Semgrep subprocess, audit P2-2).
+  scan(
+    files: SourceFile[],
+    rule: Rule,
+    baseDir?: string,
+    signal?: AbortSignal,
+  ): Promise<Violation[]>;
 }
 
 export type { Severity } from "../config/types";

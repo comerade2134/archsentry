@@ -45,9 +45,11 @@ function makeContext(opts: {
     rest: {
       repos: {
         getContent: vi.fn(async ({ path }: { path: string }) => {
-          if (path === "archsentry.yml") return { data: { content: b64(CONTRACT) } };
+          if (path === "archsentry.yml")
+            return { data: { content: b64(CONTRACT), size: Buffer.byteLength(CONTRACT) } };
           const src = contentByPath[path];
-          if (src !== undefined) return { data: { content: b64(src) } };
+          if (src !== undefined)
+            return { data: { content: b64(src), size: Buffer.byteLength(src) } };
           throw new Error("not found: " + path);
         }),
       },
