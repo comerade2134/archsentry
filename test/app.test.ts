@@ -1,5 +1,6 @@
 import app from "../src/app";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as analyzer from "../src/analyze/analyzer";
 
 const CONTRACT = `version: 1
 rules:
@@ -163,5 +164,38 @@ describe("ArchSentry GitHub App", () => {
     expect(createComment).toHaveBeenCalledTimes(1);
     const body = createComment.mock.calls[0]?.[0]?.body as string;
     expect(body).toContain("repository layer");
+  });
+
+  it("posts a non-blocking warning when the scan throws", async () => {
+    const spy = vi
+      .spyOn(analyzer, "analyzeSources")
+      .mockRejectedValueOnce(new Error("scan crashed"));
+    const handler = loadHandler();
+    const { context, createComment } = makeContext({
+      files: [{ filename: "src/user.ts", content: "const x = 1;" }],
+    });
+    await handler(context);
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("could not complete the scan") }),
+    );
+    spy.mockRestore();
+  });
+
+  it("warns and skips when the PR exceeds the file cap", async () => {
+    vi.stubEnv("ARCHSENTRY_MAX_FILES", "1");
+    const handler = loadHandler();
+    const { context, createComment } = makeContext({
+      files: [
+        { filename: "src/a.ts", content: "const x = 1;" },
+        { filename: "src/b.ts", content: "const y = 2;" },
+      ],
+    });
+    await handler(context);
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("exceeds the scan size cap") }),
+    );
+    vi.unstubAllEnvs();
   });
 });

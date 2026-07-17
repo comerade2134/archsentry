@@ -87,6 +87,11 @@ function validateRule(raw: unknown, index: number): Rule {
     }
   }
 
+  // Centralize the default severity so every engine sees the same value.
+  // Fail-closed: a rule you explicitly wrote to enforce blocks the merge by
+  // default ("error") rather than merely warning.
+  if (r.severity === undefined) r.severity = "error";
+
   return r as unknown as Rule;
 }
 

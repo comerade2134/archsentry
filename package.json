@@ -52,10 +52,16 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.6"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "lint-staged": {
     "*.{ts,js,mjs,cjs}": [

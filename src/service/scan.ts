@@ -28,7 +28,7 @@ export async function attachExplanations(
 export function diskContext(root: string): (v: Violation) => string {
   return (v) => {
     try {
-      const lines = readFileSync(join(root, v.file), "utf8").split("\n");
+      const lines = readFileSync(join(root, v.file), "utf8").split(/\r?\n/);
       const start = Math.max(0, v.line - 6);
       const end = Math.min(lines.length, v.line + 5);
       return lines.slice(start, end).join("\n");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PatternEngine } from "../src/engine/pattern-engine";
+import { PatternEngine, globToRegExp } from "../src/engine/pattern-engine";
 import type { Rule } from "../src/config/types";
 import type { SourceFile } from "../src/engine/types";
 
@@ -69,5 +69,45 @@ describe("PatternEngine", () => {
     const v = engine.scan(multi, rule);
     expect(v).toHaveLength(3);
     expect(v.map((x) => x.line)).toEqual([1, 2, 4]);
+  });
+
+  it("globToRegExp anchors and handles **/", () => {
+    expect(globToRegExp("**/*.ts").test("src/a.ts")).toBe(true);
+    expect(globToRegExp("**/*.ts").test("a.ts")).toBe(true);
+    expect(globToRegExp("**/*.ts").test("a.js")).toBe(false);
+    expect(globToRegExp("**/repositories/**").test("src/repositories/x.ts")).toBe(true);
+  });
+
+  it("scopes pattern rules to code files when paths are omitted", () => {
+    const engine = new PatternEngine();
+    const unscoped: Rule = {
+      id: "r",
+      type: "pattern",
+      severity: "error",
+      description: "d",
+      match: { patterns: ["INSERT"] },
+    };
+    const files: SourceFile[] = [
+      { path: "a.ts", absolutePath: "", content: '"INSERT"' },
+      { path: "lock.json", absolutePath: "", content: '"INSERT"' },
+    ];
+    const v = engine.scan(files, unscoped);
+    expect(v.map((x) => x.file)).toEqual(["a.ts"]);
+  });
+
+  it("matches lines split on CRLF without leaking carriage returns", () => {
+    const engine = new PatternEngine();
+    const rule: Rule = {
+      id: "r",
+      type: "pattern",
+      severity: "error",
+      description: "d",
+      match: { patterns: ["INSERT"], paths: ["**/*.ts"] },
+    };
+    const content = 'const a = 1;\r\nconst b = "INSERT INTO x";\r\nconst c = 2;\r\n';
+    const v = engine.scan([{ path: "c.ts", absolutePath: "", content }], rule);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.snippet).toBe('const b = "INSERT INTO x";');
+    expect(v[0]?.snippet).not.toContain("\r");
   });
 });

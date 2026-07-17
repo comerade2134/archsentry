@@ -59,53 +59,86 @@ export default function app(app: Probot): void {
       }
     }
 
-    // 4. Run the deterministic engine (no LLM cost).
-    const violations = await analyzeSources(sources, contract);
-
-    // Find any comment we already left on this PR so we can upsert it instead
-    // of stacking a new one on every push.
-    const { data: comments } = await context.octokit.rest.issues.listComments({
-      owner,
-      repo,
-      issue_number: pullNumber,
-    });
-    const existing = comments.find((c) => c.body?.includes(MARKER));
-
-    // Clean PR → remove a stale comment if we left one, then bail.
-    if (violations.length === 0) {
-      if (existing) {
-        await context.octokit.rest.issues.deleteComment({
-          owner,
-          repo,
-          comment_id: existing.id,
-        });
-      }
+    // 3b. Guard against pathologically large PRs. Limits are read per-PR so
+    //     self-hosted deployments can tune them via env without a redeploy.
+    const maxFiles = Number(process.env.ARCHSENTRY_MAX_FILES ?? 300);
+    const maxBytes = Number(process.env.ARCHSENTRY_MAX_BYTES ?? 5 * 1024 * 1024);
+    const fileCount = Object.keys(sources).length;
+    const totalBytes = Object.values(sources).reduce((n, s) => n + Buffer.byteLength(s), 0);
+    if (fileCount > maxFiles || totalBytes > maxBytes) {
+      console.warn(
+        `[archsentry] PR ${owner}/${repo}#${pullNumber} exceeds scan cap ` +
+          `(${fileCount} files / ${totalBytes} bytes) — skipping.`,
+      );
+      await upsert(
+        `${MARKER}\n⚠️ ArchSentry skipped this PR: it exceeds the scan size cap ` +
+          `(${fileCount} files / ${(totalBytes / 1024 / 1024).toFixed(1)} MB). ` +
+          `Split it into smaller PRs or raise the limit via ARCHSENTRY_MAX_FILES / ARCHSENTRY_MAX_BYTES.`,
+      );
       return;
     }
 
-    // 5. Attach an explanation. Detection stays free; the explainer is
-    //    selected from env (OpenAI key > Ollama > free template fallback).
-    const commented = await attachExplanations(
-      violations,
-      (v) => sources[v.file] ?? v.snippet,
-      true,
-    );
+    // 4. Run the deterministic engine (no LLM cost), wrapped so a single failure
+    //    posts a non-blocking warning instead of silently dropping enforcement.
+    try {
+      const violations = await analyzeSources(sources, contract);
 
-    const body = `${MARKER}\n${toPrComment(commented)}`;
-    if (existing) {
-      await context.octokit.rest.issues.updateComment({
-        owner,
-        repo,
-        comment_id: existing.id,
-        body,
-      });
-    } else {
-      await context.octokit.rest.issues.createComment({
+      // Clean PR → remove a stale comment if we left one, then bail.
+      if (violations.length === 0) {
+        const existing = await findExisting();
+        if (existing) {
+          await context.octokit.rest.issues.deleteComment({
+            owner,
+            repo,
+            comment_id: existing,
+          });
+        }
+        return;
+      }
+
+      // 5. Attach an explanation. Detection stays free; the explainer is
+      //    selected from env (OpenAI key > Ollama > free template fallback).
+      const commented = await attachExplanations(
+        violations,
+        (v) => sources[v.file] ?? v.snippet,
+        true,
+      );
+
+      await upsert(`${MARKER}\n${toPrComment(commented)}`);
+    } catch (e) {
+      console.error(`[archsentry] scan failed for ${owner}/${repo}#${pullNumber}:`, e);
+      await upsert(
+        `${MARKER}\n⚠️ ArchSentry could not complete the scan: ${(e as Error).message}\n` +
+          `A maintainer should check the bot logs.`,
+      );
+    }
+
+    async function findExisting(): Promise<number | undefined> {
+      const { data: comments } = await context.octokit.rest.issues.listComments({
         owner,
         repo,
         issue_number: pullNumber,
-        body,
       });
+      return comments.find((c) => c.body?.includes(MARKER))?.id;
+    }
+
+    async function upsert(body: string): Promise<void> {
+      const existing = await findExisting();
+      if (existing !== undefined) {
+        await context.octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existing,
+          body,
+        });
+      } else {
+        await context.octokit.rest.issues.createComment({
+          owner,
+          repo,
+          issue_number: pullNumber,
+          body,
+        });
+      }
     }
   });
 }

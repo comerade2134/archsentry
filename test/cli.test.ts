@@ -1,21 +1,52 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { buildCli } from "../src/cli";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-describe("CLI scan", () => {
+function setup(): string {
+  const dir = mkdtempSync(join(tmpdir(), "archsentry-cli-"));
+  writeFileSync(
+    join(dir, "archsentry.yml"),
+    'version: 1\nrules:\n  - id: r1\n    type: pattern\n    severity: error\n    description: d\n    match:\n      patterns: ["INSERT INTO"]\n',
+  );
+  writeFileSync(join(dir, "a.ts"), 'const q = "INSERT INTO users";');
+  return dir;
+}
+
+describe("CLI exit behavior", () => {
+  let dir: string;
   beforeEach(() => {
-    vi.stubEnv("OPENAI_API_KEY", "");
-    vi.stubEnv("OPENROUTER_API_KEY", "");
-    vi.stubEnv("OLLAMA_MODEL", "");
+    dir = setup();
+    process.exitCode = 0;
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    process.exitCode = 0;
   });
 
-  it("flags a violation and supports --explain without crashing", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await buildCli().parseAsync(
-      ["scan", "-c", "samples/dummy-target/archsentry.yml", "-p", "samples/dummy-target", "-e"],
+  it("exits non-zero on a violation by default", async () => {
+    const program = buildCli();
+    await program.parseAsync(["scan", "-c", join(dir, "archsentry.yml"), "-p", dir], {
+      from: "user",
+    });
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits zero with --no-fail", async () => {
+    const program = buildCli();
+    await program.parseAsync(["scan", "-c", join(dir, "archsentry.yml"), "-p", dir, "--no-fail"], {
+      from: "user",
+    });
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("filters to error severity with -s error", async () => {
+    const program = buildCli();
+    await program.parseAsync(
+      ["scan", "-c", join(dir, "archsentry.yml"), "-p", dir, "-s", "error"],
       { from: "user" },
     );
-    const out = log.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(out).toContain("no-direct-sql");
-    log.mockRestore();
+    expect(process.exitCode).toBe(1);
   });
 });

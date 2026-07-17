@@ -6,7 +6,7 @@ function toRegExp(patterns: string[]): RegExp {
   return new RegExp(escaped.join("|"));
 }
 
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i] as string;
@@ -39,9 +39,16 @@ function matchesGlob(path: string, globs: string[]): boolean {
   return globs.some((g) => globToRegExp(g).test(path));
 }
 
+// Default scope when a pattern rule omits `paths`. Without this, an unscoped
+// pattern rule would scan every file in the tree (lockfiles, YAML, etc.) — a
+// footgun. Pattern rules are about code, so scope to source extensions.
+// (globToRegExp has no brace expansion, so list the extensions explicitly.)
+const DEFAULT_CODE_GLOBS = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"];
+
 function inScope(file: SourceFile, rule: Rule): boolean {
   const match = (rule.match ?? {}) as { paths?: string[]; exclude?: string[] };
-  if (match.paths && match.paths.length && !matchesGlob(file.path, match.paths)) return false;
+  const paths = match.paths && match.paths.length ? match.paths : DEFAULT_CODE_GLOBS;
+  if (!matchesGlob(file.path, paths)) return false;
   if (match.exclude && match.exclude.length && matchesGlob(file.path, match.exclude)) return false;
   return true;
 }
@@ -62,7 +69,7 @@ export class PatternEngine implements RuleEngine {
 
     for (const file of files) {
       if (!inScope(file, rule)) continue;
-      const lines = file.content.split("\n");
+      const lines = file.content.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
         if (re.test(lines[i] as string)) {
           violations.push({

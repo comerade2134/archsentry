@@ -1,7 +1,7 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname, isAbsolute, normalize, sep } from "node:path";
 import { stringify } from "yaml";
 import type { Rule } from "../config/types";
 import type { RuleEngine, SourceFile, Violation } from "./types";
@@ -40,6 +40,17 @@ export function toSemgrepRule(rule: Rule): Record<string, unknown> {
   return out;
 }
 
+// Contain a file path inside `dir`. File paths come from the PR (attacker-
+// controlled in the GitHub App path) or disk, so we must reject absolute paths
+// and any `..` sequence that escapes the temp dir — otherwise writeFileSync
+// would let a malicious PR write arbitrary files on the bot host.
+export function safeJoin(dir: string, p: string): string | null {
+  if (isAbsolute(p)) return null;
+  const abs = join(dir, normalize(p));
+  if (abs !== dir && !abs.startsWith(dir + sep)) return null;
+  return abs;
+}
+
 interface SemgrepResult {
   path: string;
   start: { line: number };
@@ -73,7 +84,15 @@ export class SemgrepEngine implements RuleEngine {
 
     const dir = mkdtempSync(join(tmpdir(), "archsentry-"));
     try {
-      for (const f of files) writeFileSync(join(dir, f.path), f.content);
+      for (const f of files) {
+        const target = safeJoin(dir, f.path);
+        if (!target) {
+          console.warn(`[archsentry] skipping unsafe path: ${f.path}`);
+          continue;
+        }
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, f.content);
+      }
       const ruleFile = join(dir, "rule.yml");
       writeFileSync(ruleFile, stringify({ rules: [sgRule] }));
 
@@ -100,17 +119,28 @@ export class SemgrepEngine implements RuleEngine {
 
 function runSemgrep(ruleFile: string, dir: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    execFile("semgrep", ["scan", "--config", ruleFile, "--json", "--quiet", dir], (err, stdout) => {
-      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
-        reject(
-          new Error(
-            "Semgrep is not installed. Install it with `pip install semgrep` or `uv tool install semgrep`.",
-          ),
-        );
-        return;
-      }
-      // Semgrep exits non-zero when findings exist — that's expected, not a failure.
-      resolve(stdout || "");
-    });
+    execFile(
+      "semgrep",
+      ["scan", "--config", ruleFile, "--json", "--quiet", dir],
+      (err, stdout, stderr) => {
+        if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+          reject(
+            new Error(
+              "Semgrep is not installed. Install it with `pip install semgrep` or `uv tool install semgrep`.",
+            ),
+          );
+          return;
+        }
+        // Semgrep exits 1 when it finds matches — stdout still holds valid JSON, so
+        // a non-zero exit WITH output is the expected "has findings" case (not a failure).
+        // A genuine failure (malformed rule, internal crash) exits non-zero with empty
+        // stdout; treat that as a hard error so we never falsely report "clean".
+        if (err && !stdout) {
+          reject(new Error(`Semgrep failed: ${(stderr || err.message).trim()}`));
+          return;
+        }
+        resolve(stdout || "");
+      },
+    );
   });
 }
