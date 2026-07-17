@@ -4,6 +4,7 @@ dist/
 .DS_Store
 test/.tmp-*.yml
 .env
-.env.*
+.env.local
+.env.*.local
 *.pem
 private-key.pem

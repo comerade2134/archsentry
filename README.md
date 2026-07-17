@@ -47,10 +47,11 @@ Flags the seeded violation in `controllers/user.controller.ts` and exits non-zer
 
 ```bash
 pnpm install
-pnpm start   # Probot under tsx + smee-client webhook proxy
+cp .env.example .env      # then fill in APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PATH, WEBHOOK_PROXY_URL
+pnpm start               # Probot under tsx + smee-client webhook proxy
 ```
 
-Register the app on GitHub (browser flow or manually), install it on a repo that has `architectguard.yml`, and push a PR. See `architectguard.yml.example` for the contract format.
+Register the app on GitHub (browser flow or manually), install it on a repo that has `architectguard.yml`, and push a PR. See `architectguard.yml.example` for the contract format and `.env.example` for the required variables.
 
 ## Explanations (optional, free)
 
