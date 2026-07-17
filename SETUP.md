@@ -22,7 +22,7 @@ Three ways to run ArchSentry. Pick whichever fits your workflow.
    - Homepage URL: `https://github.com/comerade2134/archsentry`
    - Webhook URL: your Smee channel, e.g. `https://smee.io/xxxx`
    - Webhook secret: any string; set it as `WEBHOOK_SECRET` in `.env`
-   - Permissions: *Repository contents* (read), *Pull requests* (read & write)
+   - Permissions: _Repository contents_ (read), _Pull requests_ (read & write)
    - Subscribe to the **Pull request** event
 
 3. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Set `APP_ID` and `PRIVATE_KEY_PATH` in `.env`.

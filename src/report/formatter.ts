@@ -11,7 +11,7 @@ export function formatReport(violations: Violation[], format: Format): string {
   }
 
   const lines: string[] = [];
-    lines.push(`❌ ArchSentry found ${violations.length} violation(s):\n`);
+  lines.push(`❌ ArchSentry found ${violations.length} violation(s):\n`);
   for (const v of violations) {
     lines.push(`  • [${v.severity}] ${v.ruleId}  ${v.file}:${v.line}`);
     lines.push(`    ${v.message}`);

@@ -46,7 +46,11 @@ describe("PatternEngine", () => {
   it("reports the correct line number", () => {
     const engine = new PatternEngine();
     const multi: SourceFile[] = [
-      { path: "c.ts", absolutePath: "", content: "const x = 1;\nconst y = 2;\ndb.query(\"SELECT 1\");\n" },
+      {
+        path: "c.ts",
+        absolutePath: "",
+        content: 'const x = 1;\nconst y = 2;\ndb.query("SELECT 1");\n',
+      },
     ];
     const v = engine.scan(multi, rule);
     expect(v[0]?.line).toBe(3);

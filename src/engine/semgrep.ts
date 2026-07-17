@@ -60,7 +60,8 @@ export class SemgrepEngine implements RuleEngine {
     if (rule.type === "pattern") {
       sgRule = toSemgrepRule(rule);
     } else {
-      const native = (rule as Record<string, unknown>).semgrep as Record<string, unknown> | undefined;
+      const native = (rule as Record<string, unknown>).semgrep as
+        Record<string, unknown> | undefined;
       if (!native) throw new Error(`Rule "${rule.id}" has type "semgrep" but no "semgrep" field.`);
       sgRule = {
         id: rule.id,
@@ -102,7 +103,9 @@ function runSemgrep(ruleFile: string, dir: string): Promise<string> {
     execFile("semgrep", ["scan", "--config", ruleFile, "--json", "--quiet", dir], (err, stdout) => {
       if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
         reject(
-          new Error("Semgrep is not installed. Install it with `pip install semgrep` or `uv tool install semgrep`."),
+          new Error(
+            "Semgrep is not installed. Install it with `pip install semgrep` or `uv tool install semgrep`.",
+          ),
         );
         return;
       }

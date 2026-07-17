@@ -8,7 +8,7 @@ export interface PatternMatch {
 
 export interface Rule {
   id: string;
-  type: string;
+  type: "pattern" | "semgrep";
   severity?: Severity;
   description: string;
   match?: PatternMatch;

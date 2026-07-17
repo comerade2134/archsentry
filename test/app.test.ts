@@ -18,7 +18,11 @@ function b64(s: string): string {
 
 function loadHandler(): (ctx: unknown) => Promise<void> {
   let handler: ((ctx: unknown) => Promise<void>) | undefined;
-  app({ on: (_events: unknown, h: (ctx: unknown) => Promise<void>) => { handler = h; } } as never);
+  app({
+    on: (_events: unknown, h: (ctx: unknown) => Promise<void>) => {
+      handler = h;
+    },
+  } as never);
   if (!handler) throw new Error("handler was not registered");
   return handler;
 }
@@ -130,5 +134,34 @@ describe("ArchSentry GitHub App", () => {
     };
     await handler(context);
     expect(createComment).not.toHaveBeenCalled();
+  });
+
+  it("posts a single comment listing multiple violations", async () => {
+    const handler = loadHandler();
+    const { context, createComment } = makeContext({
+      files: [
+        { filename: "src/a.ts", content: 'const q = "INSERT INTO a";' },
+        { filename: "src/b.ts", content: 'const w = "INSERT INTO b";' },
+      ],
+    });
+    await handler(context);
+    expect(createComment).toHaveBeenCalledTimes(1);
+    const body = createComment.mock.calls[0]?.[0]?.body as string;
+    expect(body).toContain("src/a.ts");
+    expect(body).toContain("src/b.ts");
+  });
+
+  it("posts a comment with a template fallback when the explainer errors", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test");
+    const handler = loadHandler();
+    const { context, createComment } = makeContext({
+      files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
+    });
+    await handler(context);
+    vi.unstubAllGlobals();
+    expect(createComment).toHaveBeenCalledTimes(1);
+    const body = createComment.mock.calls[0]?.[0]?.body as string;
+    expect(body).toContain("repository layer");
   });
 });

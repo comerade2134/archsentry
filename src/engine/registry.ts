@@ -1,4 +1,4 @@
-import type { Contract, Rule } from "../config/types";
+import type { Contract } from "../config/types";
 import type { RuleEngine, Violation, SourceFile } from "./types";
 import { PatternEngine } from "./pattern-engine";
 import { SemgrepEngine } from "./semgrep";
@@ -26,7 +26,9 @@ export class EngineRegistry {
     for (const rule of contract.rules) {
       const engine = this.engineFor(rule.type);
       if (!engine) {
-        console.warn(`[warn] no engine for rule type "${rule.type}" (rule "${rule.id}") — skipping`);
+        console.warn(
+          `[warn] no engine for rule type "${rule.type}" (rule "${rule.id}") — skipping`,
+        );
         continue;
       }
       all.push(...(await engine.scan(files, rule)));

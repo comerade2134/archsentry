@@ -1,8 +1,8 @@
 import type { Probot } from "probot";
-import { parseContract } from "./config/loader";
+import { parseContract, ConfigError } from "./config/loader";
 import { analyzeSources } from "./analyze/analyzer";
 import { toPrComment } from "./report/formatter";
-import { selectExplainer, TemplateExplainer } from "./explain/llm";
+import { attachExplanations } from "./service/scan";
 
 const CODE_EXT = /\.(ts|tsx|js|jsx)$/;
 const MARKER = "<!-- archsentry -->";
@@ -25,8 +25,11 @@ export default function app(app: Probot): void {
       });
       if (Array.isArray(res.data) || !("content" in res.data)) return;
       contract = parseContract(Buffer.from(res.data.content, "base64").toString("utf8"));
-    } catch {
-      // No contract in the repo → nothing to enforce.
+    } catch (e) {
+      // No contract file → nothing to enforce.
+      if (e instanceof ConfigError) {
+        console.warn(`[archsentry] invalid contract in ${owner}/${repo}: ${e.message}`);
+      }
       return;
     }
 
@@ -82,18 +85,10 @@ export default function app(app: Probot): void {
 
     // 5. Attach an explanation. Detection stays free; the explainer is
     //    selected from env (OpenAI key > Ollama > free template fallback).
-    const explainer = selectExplainer();
-    const fallback = new TemplateExplainer();
-    const commented = await Promise.all(
-      violations.map(async (v) => ({
-        ...v,
-        explanation: await explainer
-          .explain(v, sources[v.file] ?? v.snippet)
-          .catch((e) => {
-            console.warn(`[ag] explainer failed, using fallback: ${e}`);
-            return fallback.explain(v);
-          }),
-      })),
+    const commented = await attachExplanations(
+      violations,
+      (v) => sources[v.file] ?? v.snippet,
+      true,
     );
 
     const body = `${MARKER}\n${toPrComment(commented)}`;

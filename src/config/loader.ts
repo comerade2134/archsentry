@@ -1,28 +1,93 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import type { Contract, Rule } from "./types";
+import type { Contract, Rule, Severity } from "./types";
+
+const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
+const VALID_TYPES = ["pattern", "semgrep"] as const;
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((x) => typeof x === "string");
+}
+
+// Thrown for any malformed archsentry.yml. Carrying its own type lets callers
+// (CLI, GitHub App) print a clean message instead of a stack trace.
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
 
 export function parseContract(raw: string): Contract {
-  const data = parse(raw) as Partial<Contract> | null;
-  if (!data || typeof data !== "object") {
-    throw new Error("Config is not a valid YAML object.");
+  const data = parse(raw);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new ConfigError("Config root must be a YAML mapping with `version` and `rules`.");
   }
-  if (typeof data.version !== "number") {
-    throw new Error(`Config missing required numeric "version".`);
+  const root = data as Record<string, unknown>;
+
+  if (typeof root.version !== "number") {
+    throw new ConfigError('Config is missing a numeric "version" field.');
   }
-  if (!Array.isArray(data.rules) || data.rules.length === 0) {
-    throw new Error(`Config must contain a non-empty "rules" array.`);
+  if (!Array.isArray(root.rules) || root.rules.length === 0) {
+    throw new ConfigError('Config "rules" must be a non-empty array.');
   }
 
-  for (const r of data.rules as Rule[]) {
-    if (!r.id || typeof r.id !== "string") throw new Error(`Each rule needs a string "id".`);
-    if (!r.type || typeof r.type !== "string") throw new Error(`Rule "${r.id}" missing "type".`);
-    if (!r.description || typeof r.description !== "string") {
-      throw new Error(`Rule "${r.id}" missing "description".`);
+  const rules = root.rules.map((r, i) => validateRule(r, i));
+  return { version: root.version, rules };
+}
+
+function validateRule(raw: unknown, index: number): Rule {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ConfigError(`Rule at index ${index} must be a mapping.`);
+  }
+  const r = raw as Record<string, unknown>;
+  const where = typeof r.id === "string" ? `Rule "${r.id}"` : `Rule at index ${index}`;
+
+  if (typeof r.id !== "string" || r.id.length === 0) {
+    throw new ConfigError(`${where} is missing a non-empty string "id".`);
+  }
+  if (typeof r.type !== "string") {
+    throw new ConfigError(`${where} is missing a string "type".`);
+  }
+  if (!(VALID_TYPES as readonly string[]).includes(r.type)) {
+    throw new ConfigError(
+      `${where} has unsupported type "${r.type}". Supported types: ${VALID_TYPES.join(", ")}.`,
+    );
+  }
+  if (typeof r.description !== "string" || r.description.length === 0) {
+    throw new ConfigError(`${where} is missing a non-empty string "description".`);
+  }
+  if (r.severity !== undefined && !VALID_SEVERITIES.includes(r.severity as Severity)) {
+    throw new ConfigError(
+      `${where} has invalid severity "${String(r.severity)}". Must be "error" or "warn".`,
+    );
+  }
+
+  if (r.type === "pattern") {
+    const match = (r.match ?? {}) as Record<string, unknown>;
+    if (!isStringArray(match.patterns)) {
+      throw new ConfigError(
+        `${where} (type "pattern") requires "match.patterns" as a non-empty array of strings.`,
+      );
+    }
+    if (match.paths !== undefined && !isStringArray(match.paths)) {
+      throw new ConfigError(`${where}: "match.paths" must be an array of glob strings.`);
+    }
+    if (match.exclude !== undefined && !isStringArray(match.exclude)) {
+      throw new ConfigError(`${where}: "match.exclude" must be an array of glob strings.`);
     }
   }
 
-  return { version: data.version, rules: data.rules as Rule[] };
+  if (r.type === "semgrep") {
+    const sg = r.semgrep as Record<string, unknown> | undefined;
+    if (!sg || typeof sg !== "object" || Object.keys(sg).length === 0) {
+      throw new ConfigError(
+        `${where} (type "semgrep") requires a non-empty "semgrep" mapping (e.g. pattern / patterns / pattern-either).`,
+      );
+    }
+  }
+
+  return r as unknown as Rule;
 }
 
 export function loadContract(path: string): Contract {
@@ -30,7 +95,7 @@ export function loadContract(path: string): Contract {
   try {
     raw = readFileSync(path, "utf8");
   } catch (e) {
-    throw new Error(`Could not read config at "${path}": ${(e as Error).message}`);
+    throw new ConfigError(`Could not read config at "${path}": ${(e as Error).message}`);
   }
   return parseContract(raw);
 }

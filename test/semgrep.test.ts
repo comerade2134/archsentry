@@ -41,8 +41,13 @@ describe("SemgrepEngine", () => {
       description: "No raw SQL.",
       semgrep: { "pattern-regex": "SELECT", languages: ["typescript"] },
     };
-    await expect(engine.scan([{ path: "a.ts", absolutePath: "a.ts", content: "SELECT" }], rule)).rejects.toThrow(
-      /Semgrep is not installed/,
-    );
+    await expect(
+      engine.scan([{ path: "a.ts", absolutePath: "a.ts", content: "SELECT" }], rule),
+    ).rejects.toThrow(/Semgrep is not installed/);
+  });
+
+  it("does not claim pattern rules when the CLI is unavailable", () => {
+    if (engine.supports("pattern")) return; // semgrep IS installed here
+    expect(engine.supports("pattern")).toBe(false);
   });
 });

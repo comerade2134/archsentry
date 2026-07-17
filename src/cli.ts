@@ -1,10 +1,9 @@
 import { Command } from "commander";
-import { loadContract } from "./config/loader";
+import pkg from "../package.json";
+import { loadContract, ConfigError } from "./config/loader";
 import { analyze } from "./analyze/analyzer";
 import { formatReport, type Format } from "./report/formatter";
-import { selectExplainer, TemplateExplainer } from "./explain/llm";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { attachExplanations, diskContext } from "./service/scan";
 
 export function buildCli(): Command {
   const program = new Command();
@@ -12,7 +11,7 @@ export function buildCli(): Command {
   program
     .name("archsentry")
     .description("Enforce your team's architectural rules on code before merge.")
-    .version("0.1.0");
+    .version(pkg.version);
 
   program
     .command("scan")
@@ -20,42 +19,33 @@ export function buildCli(): Command {
     .requiredOption("-c, --config <file>", "path to archsentry.yml")
     .requiredOption("-p, --path <dir>", "directory to scan")
     .option("-f, --format <format>", "output format: text | json", "text")
-    .option("-e, --explain", "generate AI explanations for violations", false)
+    .option("-e, --explain", "attach an AI/LLM explanation to each violation", false)
+    .option("-s, --severity <level>", "minimum severity to report: error | warn", "warn")
+    .option("--no-fail", "report only — never exit non-zero, even on errors")
     .action(async (opts) => {
-      const contract = loadContract(opts.config as string);
-      const violations = await analyze(opts.path as string, contract);
-      const format = (opts.format as Format) ?? "text";
-
-      let reported = violations;
-      if (opts.explain && violations.length > 0) {
-        const explainer = selectExplainer();
-        const fallback = new TemplateExplainer();
-        reported = await Promise.all(
-          violations.map(async (v) => {
-            let codeContext = v.snippet;
-            try {
-              const fileContent = readFileSync(join(opts.path as string, v.file), "utf8");
-              const lines = fileContent.split("\n");
-              const start = Math.max(0, v.line - 6);
-              const end = Math.min(lines.length, v.line + 5);
-              codeContext = lines.slice(start, end).join("\n");
-            } catch {
-              codeContext = v.snippet;
-            }
-            return {
-              ...v,
-              explanation: await explainer
-                .explain(v, codeContext)
-                .catch(() => fallback.explain(v)),
-            };
-          }),
+      try {
+        const contract = loadContract(opts.config as string);
+        const violations = await analyze(opts.path as string, contract);
+        const explained = await attachExplanations(
+          violations,
+          diskContext(opts.path as string),
+          opts.explain as boolean,
         );
+
+        const reported =
+          (opts.severity as string) === "error"
+            ? explained.filter((v) => v.severity === "error")
+            : explained;
+
+        console.log(formatReport(reported, (opts.format as Format) ?? "text"));
+
+        const hasError = violations.some((v) => v.severity === "error");
+        if (hasError && opts.fail !== false) process.exitCode = 1;
+      } catch (err) {
+        const message = err instanceof ConfigError ? err.message : (err as Error).message;
+        console.error(`❌ ArchSentry: ${message}`);
+        process.exitCode = 1;
       }
-
-      console.log(formatReport(reported, format));
-
-      const hasError = violations.some((v) => v.severity === "error");
-      if (hasError) process.exitCode = 1;
     });
 
   return program;

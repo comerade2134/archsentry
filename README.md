@@ -1,10 +1,10 @@
 # ArchSentry
 
-> Enforce *your* team's architectural rules on every PR — before merge. Deterministic, config-first, and free to scan.
+> Enforce _your_ team's architectural rules on every PR — before merge. Deterministic, config-first, and free to scan.
 
 AI coding assistants now write the majority of enterprise code, but the review layer built for humans has broken down. ArchSentry is a GitHub App that catches AI-generated (and human) code which violates **your team's specific architectural contract** — the rules a generic SAST tool simply can't see.
 
-- **Deterministic detection. Zero LLM cost on scan.** Rules are structured YAML, not prompts. No token is spent *finding* a violation.
+- **Deterministic detection. Zero LLM cost on scan.** Rules are structured YAML, not prompts. No token is spent _finding_ a violation.
 - **LLM only explains.** Once a violation is found, an LLM writes a plain-English fix hint — and silently falls back if the model is unavailable.
 - **Config-first.** Your contract lives in `archsentry.yml` in the repo. No dashboard, no vendor lock-in.
 - **Runs on the PR diff.** Only changed files are analyzed, in-memory, with no filesystem access.
@@ -15,14 +15,14 @@ AI coding assistants now write the majority of enterprise code, but the review l
 
 ## Why not just use SAST?
 
-SAST tools find *known vulnerability patterns* (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchSentry enforces, expressed in your own words.
+SAST tools find _known vulnerability patterns_ (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchSentry enforces, expressed in your own words.
 
-| | SAST | ArchSentry |
-|---|---|---|
-| Finds CVEs / insecure APIs | ✅ | ➖ (run SAST too) |
-| Enforces *your* team's architecture | ➖ | ✅ |
-| Cost to scan | varies | **free** (deterministic) |
-| Explains *why* in your context | ➖ | ✅ (LLM, free tier available) |
+|                                     | SAST   | ArchSentry                    |
+| ----------------------------------- | ------ | ----------------------------- |
+| Finds CVEs / insecure APIs          | ✅     | ➖ (run SAST too)             |
+| Enforces _your_ team's architecture | ➖     | ✅                            |
+| Cost to scan                        | varies | **free** (deterministic)      |
+| Explains _why_ in your context      | ➖     | ✅ (LLM, free tier available) |
 
 ## How it works
 
@@ -47,6 +47,13 @@ pnpm scan --config samples/dummy-target/archsentry.yml --path samples/dummy-targ
 
 Flags the seeded violation in `controllers/user.controller.ts` and exits non-zero on `error` severity — a drop-in CI gate.
 
+Useful flags:
+
+- `-e, --explain` — attach an LLM/AI explanation to each violation (uses `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `OLLAMA_MODEL`, else a built-in template).
+- `-s, --severity <level>` — only report `error` (or `warn`, the default) severity and above.
+- `--no-fail` — report only; never exit non-zero (handy for informational scans).
+- `-f, --format <text|json>` — `json` emits a machine-readable report.
+
 ### As a GitHub App
 
 ```bash
@@ -56,9 +63,10 @@ pnpm start               # Probot under tsx + smee-client webhook proxy
 ```
 
 **Register the app** (one-time):
+
 1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
 2. Homepage URL: `https://github.com/comerade2134/archsentry`. Webhook URL: your Smee channel (e.g. `https://smee.io/xxxx`); Webhook secret: any string (set it in `.env` as `WEBHOOK_SECRET`).
-3. Permissions: *Repository contents* (read), *Pull requests* (read & write). Subscribe to the **Pull request** event.
+3. Permissions: _Repository contents_ (read), _Pull requests_ (read & write). Subscribe to the **Pull request** event.
 4. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Install the app on the repos you want to guard.
 
 Then install it on a repo that has `archsentry.yml` and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
@@ -118,6 +126,17 @@ When a rule is violated, ArchSentry posts a comment like this on the PR — and 
 
 > Fix the flagged lines or update `archsentry.yml`.
 ```
+
+## Development
+
+```bash
+pnpm install
+pnpm test      # run the test suite
+pnpm lint      # eslint
+pnpm format    # prettier --write .
+```
+
+A pre-commit hook (simple-git-hooks + lint-staged) runs ESLint and Prettier automatically on every commit.
 
 ## Status
 
