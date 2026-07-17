@@ -27,7 +27,7 @@ function buildPrompt(v: Violation, codeContext: string): string {
 export class OpenAIExplainer implements Explainer {
   constructor(
     private apiKey: string,
-    private model = "gpt-4o-mini",
+    private model = "gpt-4.1-mini",
     private baseUrl = "https://api.openai.com/v1",
     private extraHeaders: Record<string, string> = {},
   ) {}
@@ -92,12 +92,13 @@ export class TemplateExplainer implements Explainer {
 }
 
 // Picks the strongest explainer available from the environment:
-//   OPENAI_API_KEY     -> GPT-4o-mini via OpenAI (best quality, costs money)
-//   OPENROUTER_API_KEY -> any OpenRouter model (free tiers available, e.g. Nemotron 3 Ultra)
+//   OPENROUTER_API_KEY -> any OpenRouter model (free tiers available, e.g. Nemotron 3 Ultra); recommended default
+//   OPENAI_API_KEY     -> OpenAI model (OPENAI_MODEL, default gpt-4.1-mini; billed per call)
 //   OLLAMA_MODEL       -> local Ollama model (free, private)
 //   else               -> TemplateExplainer (free, always works)
+// OpenRouter is checked first so that when both keys are present the free tier
+// wins over the billed OpenAI one.
 export function selectExplainer(): Explainer {
-  if (process.env.OPENAI_API_KEY) return new OpenAIExplainer(process.env.OPENAI_API_KEY);
   if (process.env.OPENROUTER_API_KEY) {
     const model = process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3-ultra-550b-a55b:free";
     return new OpenAIExplainer(
@@ -105,6 +106,12 @@ export function selectExplainer(): Explainer {
       model,
       "https://openrouter.ai/api/v1",
       { "HTTP-Referer": "https://github.com/archsentry", "X-Title": "ArchSentry" },
+    );
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return new OpenAIExplainer(
+      process.env.OPENAI_API_KEY,
+      process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     );
   }
   if (process.env.OLLAMA_MODEL) return new OllamaExplainer(process.env.OLLAMA_MODEL);
