@@ -5,6 +5,7 @@ import { toPrComment } from "./report/formatter";
 import { selectExplainer, TemplateExplainer } from "./explain/llm";
 
 const CODE_EXT = /\.(ts|tsx|js|jsx)$/;
+const MARKER = "<!-- archsentry -->";
 
 export default function app(app: Probot): void {
   app.on(["pull_request.opened", "pull_request.synchronize"], async (context) => {
@@ -57,9 +58,29 @@ export default function app(app: Probot): void {
 
     // 4. Run the deterministic engine (no LLM cost).
     const violations = await analyzeSources(sources, contract);
-    if (violations.length === 0) return;
 
-    // 5. Week 3: attach an explanation. Detection stays free; the explainer is
+    // Find any comment we already left on this PR so we can upsert it instead
+    // of stacking a new one on every push.
+    const { data: comments } = await context.octokit.rest.issues.listComments({
+      owner,
+      repo,
+      issue_number: pullNumber,
+    });
+    const existing = comments.find((c) => c.body?.includes(MARKER));
+
+    // Clean PR → remove a stale comment if we left one, then bail.
+    if (violations.length === 0) {
+      if (existing) {
+        await context.octokit.rest.issues.deleteComment({
+          owner,
+          repo,
+          comment_id: existing.id,
+        });
+      }
+      return;
+    }
+
+    // 5. Attach an explanation. Detection stays free; the explainer is
     //    selected from env (OpenAI key > Ollama > free template fallback).
     const explainer = selectExplainer();
     const fallback = new TemplateExplainer();
@@ -75,11 +96,21 @@ export default function app(app: Probot): void {
       })),
     );
 
-    await context.octokit.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: pullNumber,
-      body: toPrComment(commented),
-    });
+    const body = `${MARKER}\n${toPrComment(commented)}`;
+    if (existing) {
+      await context.octokit.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: existing.id,
+        body,
+      });
+    } else {
+      await context.octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: pullNumber,
+        body,
+      });
+    }
   });
 }

@@ -9,6 +9,9 @@ AI coding assistants now write the majority of enterprise code, but the review l
 - **Config-first.** Your contract lives in `archsentry.yml` in the repo. No dashboard, no vendor lock-in.
 - **Runs on the PR diff.** Only changed files are analyzed, in-memory, with no filesystem access.
 
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![CI](https://github.com/comerade2134/archsentry/actions/workflows/ci.yml/badge.svg)
+
 ## Why not just use SAST?
 
 SAST tools find *known vulnerability patterns* (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchSentry enforces, expressed in your own words.
@@ -89,6 +92,21 @@ rules:
 ```
 
 `type: pattern` rules are handled by the zero-dependency engine; `type: semgrep` rules (and `pattern` rules, once the [Semgrep](https://semgrep.dev) CLI is installed) use the AST-aware Semgrep engine — a drop-in upgrade with no config change.
+
+## What a PR comment looks like
+
+When a rule is violated, ArchSentry posts a comment like this on the PR — and removes it automatically once the PR is clean:
+
+```text
+### ArchSentry — Architectural Rule Violations
+
+- **no-direct-sql** (error) in `src/checkout.service.ts:12` — All database writes must go through the repository layer.
+  `const rows = await db.query("INSERT INTO users (...)")`
+
+  ArchSentry: move this query into the repository layer (e.g. repositories/users.ts) instead of calling db.query from a service.
+
+> Fix the flagged lines or update `archsentry.yml`.
+```
 
 ## Status
 

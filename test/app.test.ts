@@ -1,0 +1,134 @@
+import app from "../src/app";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const CONTRACT = `version: 1
+rules:
+  - id: no-direct-sql
+    type: pattern
+    severity: error
+    description: "All database writes must go through the repository layer."
+    match:
+      patterns: ["INSERT INTO"]
+      paths: ["**/*.ts"]
+`;
+
+function b64(s: string): string {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
+function loadHandler(): (ctx: unknown) => Promise<void> {
+  let handler: ((ctx: unknown) => Promise<void>) | undefined;
+  app({ on: (_events: unknown, h: (ctx: unknown) => Promise<void>) => { handler = h; } } as never);
+  if (!handler) throw new Error("handler was not registered");
+  return handler;
+}
+
+function makeContext(opts: {
+  files: { filename: string; content: string }[];
+  existingComments?: { id: number; body?: string }[];
+}) {
+  const createComment = vi.fn().mockResolvedValue({});
+  const updateComment = vi.fn().mockResolvedValue({});
+  const deleteComment = vi.fn().mockResolvedValue({});
+  const listComments = vi.fn().mockResolvedValue({ data: opts.existingComments ?? [] });
+
+  const contentByPath: Record<string, string> = {};
+  for (const f of opts.files) contentByPath[f.filename] = f.content;
+
+  const octokit = {
+    rest: {
+      repos: {
+        getContent: vi.fn(async ({ path }: { path: string }) => {
+          if (path === "archsentry.yml") return { data: { content: b64(CONTRACT) } };
+          const src = contentByPath[path];
+          if (src !== undefined) return { data: { content: b64(src) } };
+          throw new Error("not found: " + path);
+        }),
+      },
+      pulls: {
+        listFiles: vi.fn().mockResolvedValue({
+          data: opts.files.map((f) => ({ filename: f.filename, status: "modified" })),
+        }),
+      },
+      issues: { createComment, updateComment, deleteComment, listComments },
+    },
+  };
+
+  const context = {
+    payload: {
+      repository: { owner: { login: "o" }, name: "r" },
+      pull_request: { number: 7, base: { sha: "b" }, head: { sha: "h" } },
+    },
+    octokit,
+  };
+
+  return { context, createComment, updateComment, deleteComment };
+}
+
+describe("ArchSentry GitHub App", () => {
+  beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("OLLAMA_MODEL", "");
+  });
+
+  it("posts a comment when a changed file violates a rule", async () => {
+    const handler = loadHandler();
+    const { context, createComment, updateComment } = makeContext({
+      files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
+    });
+    await handler(context);
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(updateComment).not.toHaveBeenCalled();
+    expect(createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("no-direct-sql") }),
+    );
+    expect(createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("<!-- archsentry -->") }),
+    );
+  });
+
+  it("updates an existing comment instead of duplicating it", async () => {
+    const handler = loadHandler();
+    const { context, createComment, updateComment } = makeContext({
+      files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
+      existingComments: [{ id: 99, body: "<!-- archsentry -->\nold" }],
+    });
+    await handler(context);
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    expect(updateComment).toHaveBeenCalledWith(expect.objectContaining({ comment_id: 99 }));
+    expect(createComment).not.toHaveBeenCalled();
+  });
+
+  it("deletes a stale comment when there are no violations", async () => {
+    const handler = loadHandler();
+    const { context, createComment, deleteComment } = makeContext({
+      files: [{ filename: "src/user.ts", content: "const x = 1;" }],
+      existingComments: [{ id: 42, body: "<!-- archsentry -->\nold violation" }],
+    });
+    await handler(context);
+    expect(deleteComment).toHaveBeenCalledTimes(1);
+    expect(deleteComment).toHaveBeenCalledWith(expect.objectContaining({ comment_id: 42 }));
+    expect(createComment).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no contract is present", async () => {
+    const handler = loadHandler();
+    const createComment = vi.fn();
+    const context = {
+      payload: {
+        repository: { owner: { login: "o" }, name: "r" },
+        pull_request: { number: 7, base: { sha: "b" }, head: { sha: "h" } },
+      },
+      octokit: {
+        rest: {
+          repos: { getContent: vi.fn().mockRejectedValue(new Error("404")) },
+          pulls: { listFiles: vi.fn() },
+          issues: { createComment, listComments: vi.fn().mockResolvedValue({ data: [] }) },
+        },
+      },
+    };
+    await handler(context);
+    expect(createComment).not.toHaveBeenCalled();
+  });
+});
