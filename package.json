@@ -1,7 +1,6 @@
 {
   "name": "archsentry",
   "version": "0.1.0",
-  "private": true,
   "homepage": "https://github.com/comerade2134/archsentry",
   "repository": {
     "type": "git",
@@ -12,13 +11,23 @@
   "bin": {
     "archsentry": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "archsentry.yml.example",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "scan": "tsx src/index.ts scan",
     "dev": "tsx src/index.ts",
     "start": "node --import tsx ./node_modules/probot/bin/probot.js run ./src/app.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "commander": "^12.1.0",
@@ -27,6 +36,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "^0.28.1",
     "smee-client": "^5.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
