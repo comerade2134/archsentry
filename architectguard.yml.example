@@ -1,0 +1,53 @@
+# architectguard.yml.example
+
+version: 1
+
+rules:
+  # Detectors run deterministically (no LLM). `description` is the human text
+  # the LLM will later expand into a friendly PR comment (Week 3).
+  - id: no-direct-sql
+    type: pattern
+    severity: error
+    description: "All database writes must go through the repository layer."
+    match:
+      patterns:
+        - "INSERT INTO"
+        - "UPDATE "
+        - "DELETE FROM"
+        - "db.query("
+        - "connection.query("
+      paths:
+        - "**/*.ts"
+        - "**/*.js"
+      exclude:
+        - "**/repositories/**"
+        - "**/migrations/**"
+
+  - id: no-hardcoded-secret
+    type: pattern
+    severity: error
+    description: "Secrets must live in the secrets manager, not in source."
+    match:
+      patterns:
+        - "sk-"
+        - "AKIA"
+        - "ghp_"
+      paths:
+        - "**/*.ts"
+        - "**/*.js"
+      exclude:
+        - "**/*.test.ts"
+
+  # `type: semgrep` rules are handed to the Semgrep CLI (a full AST-aware engine).
+  # Install it with `pip install semgrep` (or `uv tool install semgrep`). When the
+  # CLI is present, ArchitectGuard automatically routes `pattern` rules through
+  # Semgrep too — drop-in upgrade, no config change needed.
+  - id: no-raw-dangerous-eval
+    type: semgrep
+    severity: error
+    description: "Do not call eval() or the Function constructor in product code."
+    semgrep:
+      languages: ["typescript", "javascript"]
+      "pattern-either":
+        - pattern: eval(...)
+        - pattern: new Function(...)

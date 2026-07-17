@@ -1,0 +1,113 @@
+import { execFile, execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { stringify } from "yaml";
+import type { Rule } from "../config/types";
+import type { RuleEngine, SourceFile, Violation } from "./types";
+
+let _available: boolean | null = null;
+function semgrepAvailable(): boolean {
+  if (_available !== null) return _available;
+  try {
+    execFileSync("semgrep", ["--version"], { stdio: "ignore" });
+    _available = true;
+  } catch {
+    _available = false;
+  }
+  return _available;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Translate our structured `pattern` rule into a Semgrep rule (regex match).
+export function toSemgrepRule(rule: Rule): Record<string, unknown> {
+  const match = (rule.match ?? {}) as { patterns?: string[]; paths?: string[]; exclude?: string[] };
+  const patterns = match.patterns ?? [];
+  const out: Record<string, unknown> = {
+    id: rule.id,
+    severity: rule.severity === "warn" ? "WARNING" : "ERROR",
+    message: rule.description,
+    languages: ["typescript", "javascript"],
+    "pattern-regex": patterns.map(escapeRegex).join("|"),
+  };
+  const paths: Record<string, string[]> = {};
+  if (match.paths) paths.include = match.paths;
+  if (match.exclude) paths.exclude = match.exclude;
+  if (Object.keys(paths).length) out.paths = paths;
+  return out;
+}
+
+interface SemgrepResult {
+  path: string;
+  start: { line: number };
+  extra: { message: string; lines?: string };
+}
+
+export class SemgrepEngine implements RuleEngine {
+  // Claims `semgrep` rules always, and `pattern` rules only when the CLI exists
+  // — so it transparently takes over from PatternEngine once Semgrep is installed.
+  supports(type: string): boolean {
+    if (type === "semgrep") return true;
+    if (type === "pattern") return semgrepAvailable();
+    return false;
+  }
+
+  async scan(files: SourceFile[], rule: Rule): Promise<Violation[]> {
+    let sgRule: Record<string, unknown>;
+    if (rule.type === "pattern") {
+      sgRule = toSemgrepRule(rule);
+    } else {
+      const native = (rule as Record<string, unknown>).semgrep as Record<string, unknown> | undefined;
+      if (!native) throw new Error(`Rule "${rule.id}" has type "semgrep" but no "semgrep" field.`);
+      sgRule = {
+        id: rule.id,
+        severity: rule.severity === "warn" ? "WARNING" : "ERROR",
+        message: rule.description,
+        ...native,
+      };
+    }
+
+    const dir = mkdtempSync(join(tmpdir(), "architectguard-"));
+    try {
+      for (const f of files) writeFileSync(join(dir, f.path), f.content);
+      const ruleFile = join(dir, "rule.yml");
+      writeFileSync(ruleFile, stringify({ rules: [sgRule] }));
+
+      const stdout = await runSemgrep(ruleFile, dir);
+      const parsed = JSON.parse(stdout || '{"results":[]}') as { results?: SemgrepResult[] };
+      const normDir = dir.replace(/\\/g, "/");
+      return (parsed.results ?? []).map((r) => {
+        const p = r.path.replace(/\\/g, "/");
+        const file = p.startsWith(normDir) ? p.slice(normDir.length).replace(/^\//, "") : p;
+        return {
+          ruleId: rule.id,
+          severity: (rule.severity ?? "error") as Violation["severity"],
+          file,
+          line: r.start.line,
+          snippet: (r.extra.lines ?? "").trim(),
+          message: r.extra.message || rule.description,
+        };
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+function runSemgrep(ruleFile: string, dir: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    execFile("semgrep", ["scan", "--config", ruleFile, "--json", "--quiet", dir], (err, stdout) => {
+      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(
+          new Error("Semgrep is not installed. Install it with `pip install semgrep` or `uv tool install semgrep`."),
+        );
+        return;
+      }
+      // Semgrep exits non-zero when findings exist — that's expected, not a failure.
+      resolve(stdout || "");
+    });
+  });
+}

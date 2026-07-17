@@ -1,0 +1,19 @@
+version: 1
+rules:
+  - id: no-direct-sql
+    type: pattern
+    severity: error
+    description: "All database writes must go through the repository layer."
+    match:
+      patterns:
+        - "INSERT INTO"
+        - "UPDATE "
+        - "DELETE FROM"
+        - "db.query("
+        - "connection.query("
+      paths:
+        - "**/*.ts"
+        - "**/*.js"
+      exclude:
+        - "**/repositories/**"
+        - "**/migrations/**"
