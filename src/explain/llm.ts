@@ -1,6 +1,14 @@
 import type { Violation } from "../engine/types";
 import { envInt } from "../util/env";
 
+/**
+ * Provides a human-readable explanation for a single {@link Violation}. Every
+ * explainer receives the offending {@link Violation} plus the windowed source
+ * context (never the whole file), and may take an {@link AbortSignal} so a
+ * global deadline can cancel the call. Implementations: {@link OpenAIExplainer}
+ * (OpenAI / OpenRouter), {@link OllamaExplainer} (local), {@link TemplateExplainer}
+ * (free fallback, audit P3 of v0.2.3).
+ */
 export interface Explainer {
   explain(v: Violation, codeContext: string, signal?: AbortSignal): Promise<string>;
 }
@@ -22,6 +30,15 @@ const LLM_TIMEOUT_MS = envInt("ARCHSENTRY_LLM_TIMEOUT_MS", 30_000);
 // flood the PR comment or exhaust the Markdown render (audit P2-D).
 const MAX_EXPLANATION_CHARS = envInt("ARCHSENTRY_MAX_EXPLANATION_CHARS", 1000);
 
+/**
+ * Render the prompt for an explainer. Both the rule metadata and the source
+ * snippet are wrapped in fenced DATA blocks (`<<<RULE ... RULE>>>` /
+ * `<<<CODE ... CODE>>>`) so that attacker-influenced config text can never be
+ * interpreted as a system instruction (prompt-injection hardening, audit P2-D).
+ *
+ * @param v The violation being explained.
+ * @param codeContext A windowed slice of the offending file (bounded length).
+ */
 export function buildPrompt(v: Violation, codeContext: string): string {
   // Delimit BOTH the rule metadata and the source as DATA, not instructions
   // (prompt-injection hardening, audits P2-D/P2-3). `ruleId`/`severity`/`message`
@@ -67,6 +84,8 @@ function requestSignal(external?: AbortSignal): AbortSignal {
 
 // OpenAI-compatible chat API (OpenAI itself, or any OpenAI-compatible endpoint
 // such as OpenRouter). Selected when OPENAI_API_KEY or OPENROUTER_API_KEY is set.
+// `extraHeaders` carries provider-specific routing (e.g. OpenRouter's
+// HTTP-Referer / X-Title).
 export class OpenAIExplainer implements Explainer {
   constructor(
     private apiKey: string,
@@ -99,7 +118,8 @@ export class OpenAIExplainer implements Explainer {
   }
 }
 
-// Free local model via Ollama (https://ollama.com). Used when OLLAMA_MODEL is set.
+// Free local model via Ollama (https://ollama.com). Used when OLLAMA_MODEL is set;
+// keeps all code on-device (no third-party API).
 export class OllamaExplainer implements Explainer {
   constructor(
     private model: string,
@@ -123,7 +143,9 @@ export class OllamaExplainer implements Explainer {
   }
 }
 
-// Zero-cost, zero-dependency fallback: derives a remediation hint from the rule.
+// Zero-cost, zero-dependency fallback: derives a remediation hint from the rule
+// message alone. Always works with no API key, satisfying the "free by default"
+// design constraint (audit P3 of v0.2.3).
 export class TemplateExplainer implements Explainer {
   async explain(v: Violation): Promise<string> {
     return (
@@ -134,13 +156,14 @@ export class TemplateExplainer implements Explainer {
   }
 }
 
-// Picks the strongest explainer available from the environment:
-//   OPENROUTER_API_KEY -> any OpenRouter model (free tiers available, e.g. Nemotron 3 Ultra); recommended default
-//   OPENAI_API_KEY     -> OpenAI model (OPENAI_MODEL, default gpt-4.1-mini; billed per call)
-//   OLLAMA_MODEL       -> local Ollama model (free, private)
-//   else               -> TemplateExplainer (free, always works)
-// OpenRouter is checked first so that when both keys are present the free tier
-// wins over the billed OpenAI one.
+/**
+ * Select the strongest explainer available from the environment, in priority
+ * order: OpenRouter (free tiers, e.g. Nemotron 3 Ultra) → OpenAI (billed) →
+ * Ollama (local, private) → {@link TemplateExplainer} (always works). OpenRouter
+ * is checked first so a free tier wins over billed OpenAI when both keys exist.
+ *
+ * @returns An {@link Explainer} ready to call; never throws.
+ */
 export function selectExplainer(): Explainer {
   if (process.env.OPENROUTER_API_KEY) {
     const model = process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3-ultra-550b-a55b:free";

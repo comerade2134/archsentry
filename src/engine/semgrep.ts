@@ -6,6 +6,7 @@ import { stringify } from "yaml";
 import type { Rule } from "../config/types";
 import type { RuleEngine, SourceFile, Violation } from "./types";
 import { envInt } from "../util/env";
+import { consoleLogger, type Logger } from "../util/log";
 
 // Async, memoized availability probe. Replaces the old synchronous
 // execFileSync("semgrep", ["--version"]) that blocked the event loop on the
@@ -64,10 +65,26 @@ interface SemgrepResult {
   extra: { message: string; lines?: string };
 }
 
+/**
+ * Semgrep-backed scanning engine (opt-in). Activated only when a contract
+ * contains a `semgrep` rule AND the Semgrep CLI is installed (probed
+ * asynchronously by the registry, never via a blocking subprocess — audit
+ * P1-3). Semgrep analyses a directory on disk, so the registry materializes the
+ * matched source tree into a temp dir and hands it over via `baseDir` (audit
+ * P2-B). A single rule is written to `rule.yml` and run with `--json`; results
+ * are mapped back into {@link Violation}s. When Semgrep is absent the registry
+ * never constructs this engine, so pattern-only scans stay zero-dep.
+ */
 export class SemgrepEngine implements RuleEngine {
   // Semgrep scans a directory on disk, so the registry must materialize the
   // source tree and hand it over via `baseDir` (audit P2-B).
   needsDisk = true;
+
+  private readonly logger: Logger;
+
+  constructor(logger: Logger = consoleLogger) {
+    this.logger = logger;
+  }
 
   // Only claims `semgrep` rules. Pattern rules always use the zero-dep
   // PatternEngine; we never probe for the CLI here (audit P1-3).
@@ -105,7 +122,7 @@ export class SemgrepEngine implements RuleEngine {
         for (const f of files) {
           const target = safeJoin(dir, f.path);
           if (!target) {
-            console.warn(`[archsentry] skipping unsafe path: ${f.path}`);
+            this.logger.warn(`skipping unsafe path: ${f.path}`);
             continue;
           }
           mkdirSync(dirname(target), { recursive: true });

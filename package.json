@@ -1,13 +1,29 @@
 {
   "name": "archsentry",
   "version": "0.2.6",
+  "description": "Enforce your team's architectural rules on code before merge. Deterministic, config-first, AI-explanation-only.",
   "homepage": "https://github.com/comerade2134/archsentry",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/comerade2134/archsentry.git"
   },
+  "bugs": {
+    "url": "https://github.com/comerade2134/archsentry/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "github-app",
+    "probot",
+    "architecture-governance",
+    "linting",
+    "static-analysis",
+    "ast",
+    "semgrep",
+    "code-review",
+    "ci",
+    "developer-tools"
+  ],
   "type": "module",
-  "description": "Enforce your team's architectural rules on code before merge. Deterministic, config-first, AI-explanation-only.",
   "bin": {
     "archsentry": "dist/index.js"
   },

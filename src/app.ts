@@ -1,8 +1,4 @@
 import type { Probot, Context } from "probot";
-
-// The handler only ever fires for pull_request webhook events, so narrow the
-// context to that payload (which carries `repository` + `pull_request`).
-type PrContext = Context<"pull_request">;
 import { parseContract, ConfigError } from "./config/loader";
 import { analyzeSources } from "./analyze/analyzer";
 import { toPrComment } from "./report/formatter";
@@ -10,6 +6,11 @@ import { attachExplanations, windowedContext } from "./service/scan";
 import type { Violation } from "./engine/types";
 import { mapWithConcurrency, withTimeout } from "./util/async";
 import { envInt } from "./util/env";
+import { consoleLogger, type Logger } from "./util/log";
+
+// The handler only ever fires for pull_request webhook events, so narrow the
+// context to that payload (which carries `repository` + `pull_request`).
+type PrContext = Context<"pull_request">;
 
 const CODE_EXT = /\.(ts|tsx|js|jsx)$/;
 const MARKER = "<!-- archsentry -->";
@@ -32,9 +33,11 @@ export default function app(app: Probot): void {
   // the background. Awaiting the full pipeline here used to blow GitHub's ~10s
   // webhook deadline on large PRs (audit P1-A). We `void` it so Probot acks with
   // 200 right away; failures are logged, not thrown to the webhook.
+  const log: Logger = app.log ?? consoleLogger;
+  log.info("ArchSentry GitHub App listening for pull_request.opened / synchronize");
   app.on(["pull_request.opened", "pull_request.synchronize"], (context) => {
     void handlePr(context as PrContext).catch((e) =>
-      console.error("[archsentry] unhandled error in PR handler:", e),
+      log.error("unhandled error in PR handler:", e),
     );
   });
 }
@@ -44,19 +47,20 @@ export async function handlePr(context: PrContext): Promise<void> {
   const owner = repository.owner.login;
   const repo = repository.name;
   const pullNumber = pull_request.number;
+  const log: Logger = context.log ?? consoleLogger;
 
   // Caps are read per-PR from env so self-hosted deployments can tune them
   // (and tests can override them) without a redeploy. envInt (not Number)
   // guards against a malformed value silently disabling the cap (audit P3-E).
-  const MAX_FILE_BYTES = envInt("ARCHSENTRY_MAX_FILE_BYTES", 512 * 1024);
-  const MAX_FILE_LINES = envInt("ARCHSENTRY_MAX_FILE_LINES", 5_000);
-  const MAX_FILES = envInt("ARCHSENTRY_MAX_FILES", 300);
-  const MAX_BYTES = envInt("ARCHSENTRY_MAX_BYTES", 5 * 1024 * 1024);
+  const MAX_FILE_BYTES = envInt("ARCHSENTRY_MAX_FILE_BYTES", 512 * 1024, log);
+  const MAX_FILE_LINES = envInt("ARCHSENTRY_MAX_FILE_LINES", 5_000, log);
+  const MAX_FILES = envInt("ARCHSENTRY_MAX_FILES", 300, log);
+  const MAX_BYTES = envInt("ARCHSENTRY_MAX_BYTES", 5 * 1024 * 1024, log);
   // Bound how many file contents we fetch at once (audit P1-C).
-  const FETCH_CONCURRENCY = envInt("ARCHSENTRY_FETCH_CONCURRENCY", 8);
+  const FETCH_CONCURRENCY = envInt("ARCHSENTRY_FETCH_CONCURRENCY", 8, log);
   // Hard ceiling on the whole scan so a slow PR can never pin the (detached)
   // worker indefinitely. Stays under GitHub's webhook timeout (audit P2-C).
-  const PIPELINE_TIMEOUT_MS = envInt("ARCHSENTRY_PIPELINE_TIMEOUT_MS", 9_000);
+  const PIPELINE_TIMEOUT_MS = envInt("ARCHSENTRY_PIPELINE_TIMEOUT_MS", 9_000, log);
 
   // 1. Load the contract from archsentry.yml in the PR's base branch.
   let contract;
@@ -70,9 +74,13 @@ export async function handlePr(context: PrContext): Promise<void> {
     if (Array.isArray(res.data) || !("content" in res.data)) return;
     contract = parseContract(Buffer.from(res.data.content, "base64").toString("utf8"));
   } catch (e) {
-    // No contract file → nothing to enforce.
+    // No contract file → nothing to enforce. A 404 means the repo simply has no
+    // archsentry.yml; any other error is logged (but we still fail open rather
+    // than blocking the PR over a config fetch glitch).
     if (e instanceof ConfigError) {
-      console.warn(`[archsentry] invalid contract in ${owner}/${repo}: ${e.message}`);
+      log.warn(`invalid contract in ${owner}/${repo}: ${e.message}`);
+    } else if ((e as { status?: number })?.status !== 404) {
+      log.warn(`could not load contract in ${owner}/${repo}: ${(e as Error).message}`);
     }
     return;
   }
@@ -122,9 +130,8 @@ export async function handlePr(context: PrContext): Promise<void> {
       // size up front, so a huge blob never gets materialized in RAM (audit
       // P1-1 — fixes the OOM where decode ran before the size check).
       if (typeof res.data.size !== "number" || res.data.size > MAX_FILE_BYTES) {
-        console.warn(
-          `[archsentry] skipping ${file.filename}: ${res.data.size ?? "?"} bytes ` +
-            `exceeds per-file cap (${MAX_FILE_BYTES})`,
+        log.warn(
+          `skipping ${file.filename}: ${res.data.size ?? "?"} bytes exceeds per-file cap (${MAX_FILE_BYTES})`,
         );
         return null;
       }
@@ -132,7 +139,7 @@ export async function handlePr(context: PrContext): Promise<void> {
       const content = decodeBlob(res.data.content);
       // Belt-and-suspenders for any provider that under-reports `size`.
       if (Buffer.byteLength(content) > MAX_FILE_BYTES) {
-        console.warn(`[archsentry] skipping ${file.filename}: exceeds per-file size cap`);
+        log.warn(`skipping ${file.filename}: exceeds per-file size cap`);
         return null;
       }
       return [file.filename, content] as const;
@@ -143,7 +150,7 @@ export async function handlePr(context: PrContext): Promise<void> {
         return null;
       }
       // Transient (network blip, 5xx) — skip this file but keep going.
-      console.warn(`[archsentry] could not read ${file.filename}: ${(e as Error).message}`);
+      log.warn(`could not read ${file.filename}: ${(e as Error).message}`);
       return null;
     }
   });
@@ -169,8 +176,8 @@ export async function handlePr(context: PrContext): Promise<void> {
   const fileCount = Object.keys(sources).length;
   const totalBytes = Object.values(sources).reduce((n, s) => n + Buffer.byteLength(s), 0);
   if (fileCount > MAX_FILES || totalBytes > MAX_BYTES) {
-    console.warn(
-      `[archsentry] PR ${owner}/${repo}#${pullNumber} exceeds scan cap ` +
+    log.warn(
+      `PR ${owner}/${repo}#${pullNumber} exceeds scan cap ` +
         `(${fileCount} files / ${totalBytes} bytes) — skipping.`,
     );
     await upsert(
@@ -188,7 +195,7 @@ export async function handlePr(context: PrContext): Promise<void> {
   const deadline = AbortSignal.timeout(PIPELINE_TIMEOUT_MS);
   try {
     const violations = await withTimeout(
-      analyzeSources(sources, contract, deadline),
+      analyzeSources(sources, contract, deadline, log),
       PIPELINE_TIMEOUT_MS,
       deadline,
     );
@@ -221,7 +228,7 @@ export async function handlePr(context: PrContext): Promise<void> {
 
     await upsert(`${MARKER}\n${toPrComment(commented)}`);
   } catch (e) {
-    console.error(`[archsentry] scan failed for ${owner}/${repo}#${pullNumber}:`, e);
+    log.error(`scan failed for ${owner}/${repo}#${pullNumber}:`, e);
     await upsert(
       `${MARKER}\n⚠️ ArchSentry could not complete the scan: ${(e as Error).message}\n` +
         `A maintainer should check the bot logs.`,
@@ -267,7 +274,7 @@ export async function handlePr(context: PrContext): Promise<void> {
         });
       }
     } catch (e) {
-      console.error(`[archsentry] failed to upsert comment on ${owner}/${repo}#${pullNumber}:`, e);
+      log.error(`failed to upsert comment on ${owner}/${repo}#${pullNumber}:`, e);
     }
   }
 }

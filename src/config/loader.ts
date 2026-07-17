@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import type { Contract, Rule, Severity, PatternMatch } from "./types";
+import { consoleLogger } from "../util/log";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
 const VALID_TYPES = ["pattern", "semgrep"] as const;
@@ -16,7 +17,8 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 // Thrown for any malformed archsentry.yml. Carrying its own type lets callers
-// (CLI, GitHub App) print a clean message instead of a stack trace.
+// (CLI, GitHub App) distinguish a user-facing config error from an unexpected
+// internal failure and print a clean message instead of a stack trace.
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -24,6 +26,21 @@ export class ConfigError extends Error {
   }
 }
 
+/**
+ * Parse and validate a raw `archsentry.yml` document into a {@link Contract}.
+ *
+ * This is the single source of truth for config shape: it enforces the schema
+ * version, rejects unknown rule keys (with a warning — audit P3-3), validates
+ * each rule's fields, and bounds the ruleset size (`MAX_RULES`, audit sweep).
+ * On any structural problem it throws {@link ConfigError} with a message safe to
+ * surface to the user. The function is pure (no I/O, no mutation of the caller's
+ * input), so callers can parse without side effects.
+ *
+ * @param raw The full YAML text of the contract.
+ * @returns A fully-typed, validated {@link Contract}.
+ * @throws {ConfigError} When the document is missing required fields, declares
+ *   an unsupported `version`, or violates a per-rule constraint.
+ */
 export function parseContract(raw: string): Contract {
   const data = parse(raw);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -58,7 +75,7 @@ export function parseContract(raw: string): Contract {
     seen.set(rule.id, (seen.get(rule.id) ?? 0) + 1);
   }
   for (const [id, count] of seen) {
-    if (count > 1) console.warn(`[archsentry] duplicate rule id "${id}" (${count} occurrences).`);
+    if (count > 1) consoleLogger.warn(`duplicate rule id "${id}" (${count} occurrences).`);
   }
 
   return { version: root.version, rules };
@@ -170,7 +187,7 @@ function validateRule(raw: unknown, index: number): Rule {
   const KNOWN = new Set(["id", "type", "severity", "description", "match", "semgrep"]);
   const extra = Object.keys(r).filter((k) => !KNOWN.has(k));
   if (extra.length) {
-    console.warn(`[archsentry] ${where} has unknown key(s): ${extra.join(", ")} (ignored)`);
+    consoleLogger.warn(`${where} has unknown key(s): ${extra.join(", ")} (ignored)`);
   }
 
   // Centralize the default severity so every engine sees the same value.
@@ -192,6 +209,14 @@ function validateRule(raw: unknown, index: number): Rule {
   return rule;
 }
 
+/**
+ * Read `archsentry.yml` from disk and parse it via {@link parseContract}. Used
+ * by the CLI entry point, which operates on a local file path. Any read error is
+ * re-thrown as a {@link ConfigError} so the CLI can print a clean message and
+ * exit non-zero.
+ *
+ * @param path Filesystem path to the contract file.
+ */
 export function loadContract(path: string): Contract {
   let raw: string;
   try {
