@@ -13,13 +13,13 @@ export default function app(app: Probot): void {
     const repo = repository.name;
     const pullNumber = pull_request.number;
 
-    // 1. Load the contract from architectguard.yml in the PR's base branch.
+    // 1. Load the contract from archsentry.yml in the PR's base branch.
     let contract;
     try {
       const res = await context.octokit.rest.repos.getContent({
         owner,
         repo,
-        path: "architectguard.yml",
+        path: "archsentry.yml",
         ref: pull_request.base.sha,
       });
       if (Array.isArray(res.data) || !("content" in res.data)) return;

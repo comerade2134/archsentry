@@ -5,7 +5,7 @@ export interface Explainer {
 }
 
 const SYSTEM_PROMPT =
-  "You are ArchitectGuard, a concise code-review bot. Explain to a developer, in 2-3 plain sentences, " +
+  "You are ArchSentry, a concise code-review bot. Explain to a developer, in 2-3 plain sentences, " +
   "why an architectural rule was violated and how to fix it. Reference the specific code. No preamble.";
 
 function buildPrompt(v: Violation, codeContext: string): string {
@@ -97,7 +97,7 @@ export function selectExplainer(): Explainer {
       process.env.OPENROUTER_API_KEY,
       model,
       "https://openrouter.ai/api/v1",
-      { "HTTP-Referer": "https://github.com/architectguard", "X-Title": "ArchitectGuard" },
+      { "HTTP-Referer": "https://github.com/archsentry", "X-Title": "ArchSentry" },
     );
   }
   if (process.env.OLLAMA_MODEL) return new OllamaExplainer(process.env.OLLAMA_MODEL);

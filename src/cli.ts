@@ -7,14 +7,14 @@ export function buildCli(): Command {
   const program = new Command();
 
   program
-    .name("architectguard")
+    .name("archsentry")
     .description("Enforce your team's architectural rules on code before merge.")
     .version("0.1.0");
 
   program
     .command("scan")
-    .description("Scan a path against an architectguard.yml contract.")
-    .requiredOption("-c, --config <file>", "path to architectguard.yml")
+    .description("Scan a path against an archsentry.yml contract.")
+    .requiredOption("-c, --config <file>", "path to archsentry.yml")
     .requiredOption("-p, --path <dir>", "directory to scan")
     .option("-f, --format <format>", "output format: text | json", "text")
     .action(async (opts) => {

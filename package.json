@@ -1,11 +1,11 @@
 {
-  "name": "architectguard",
+  "name": "archsentry",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Enforce your team's architectural rules on code before merge. Deterministic, config-first, AI-explanation-only.",
   "bin": {
-    "architectguard": "dist/index.js"
+    "archsentry": "dist/index.js"
   },
   "scripts": {
     "scan": "tsx src/index.ts scan",

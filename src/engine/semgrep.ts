@@ -70,7 +70,7 @@ export class SemgrepEngine implements RuleEngine {
       };
     }
 
-    const dir = mkdtempSync(join(tmpdir(), "architectguard-"));
+    const dir = mkdtempSync(join(tmpdir(), "archsentry-"));
     try {
       for (const f of files) writeFileSync(join(dir, f.path), f.content);
       const ruleFile = join(dir, "rule.yml");

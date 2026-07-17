@@ -7,11 +7,11 @@ export function formatReport(violations: Violation[], format: Format): string {
     return JSON.stringify({ violations }, null, 2);
   }
   if (violations.length === 0) {
-    return "✅ ArchitectGuard: no rule violations found.";
+    return "✅ ArchSentry: no rule violations found.";
   }
 
   const lines: string[] = [];
-  lines.push(`❌ ArchitectGuard found ${violations.length} violation(s):\n`);
+    lines.push(`❌ ArchSentry found ${violations.length} violation(s):\n`);
   for (const v of violations) {
     lines.push(`  • [${v.severity}] ${v.ruleId}  ${v.file}:${v.line}`);
     lines.push(`    ${v.message}`);
@@ -23,7 +23,7 @@ export function formatReport(violations: Violation[], format: Format): string {
 
 export function toPrComment(violations: Violation[]): string {
   if (violations.length === 0) {
-    return "✅ ArchitectGuard: no architectural-rule violations detected.";
+    return "✅ ArchSentry: no architectural-rule violations detected.";
   }
   const body = violations
     .map((v) => {
@@ -32,5 +32,5 @@ export function toPrComment(violations: Violation[]): string {
       return line;
     })
     .join("\n\n");
-  return `### ArchitectGuard — Architectural Rule Violations\n\n${body}\n\n> Fix the flagged lines or update \`architectguard.yml\`.`;
+  return `### ArchSentry — Architectural Rule Violations\n\n${body}\n\n> Fix the flagged lines or update \`archsentry.yml\`.`;
 }

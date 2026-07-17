@@ -1,4 +1,4 @@
-# architectguard.yml.example
+# archsentry.yml.example
 
 version: 1
 
@@ -40,7 +40,7 @@ rules:
 
   # `type: semgrep` rules are handed to the Semgrep CLI (a full AST-aware engine).
   # Install it with `pip install semgrep` (or `uv tool install semgrep`). When the
-  # CLI is present, ArchitectGuard automatically routes `pattern` rules through
+  # CLI is present, ArchSentry automatically routes `pattern` rules through
   # Semgrep too — drop-in upgrade, no config change needed.
   - id: no-raw-dangerous-eval
     type: semgrep

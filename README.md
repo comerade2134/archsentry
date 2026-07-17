@@ -1,19 +1,19 @@
-# ArchitectGuard
+# ArchSentry
 
 > Enforce *your* team's architectural rules on every PR — before merge. Deterministic, config-first, and free to scan.
 
-AI coding assistants now write the majority of enterprise code, but the review layer built for humans has broken down. ArchitectGuard is a GitHub App that catches AI-generated (and human) code which violates **your team's specific architectural contract** — the rules a generic SAST tool simply can't see.
+AI coding assistants now write the majority of enterprise code, but the review layer built for humans has broken down. ArchSentry is a GitHub App that catches AI-generated (and human) code which violates **your team's specific architectural contract** — the rules a generic SAST tool simply can't see.
 
 - **Deterministic detection. Zero LLM cost on scan.** Rules are structured YAML, not prompts. No token is spent *finding* a violation.
 - **LLM only explains.** Once a violation is found, an LLM writes a plain-English fix hint — and silently falls back if the model is unavailable.
-- **Config-first.** Your contract lives in `architectguard.yml` in the repo. No dashboard, no vendor lock-in.
+- **Config-first.** Your contract lives in `archsentry.yml` in the repo. No dashboard, no vendor lock-in.
 - **Runs on the PR diff.** Only changed files are analyzed, in-memory, with no filesystem access.
 
 ## Why not just use SAST?
 
-SAST tools find *known vulnerability patterns* (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchitectGuard enforces, expressed in your own words.
+SAST tools find *known vulnerability patterns* (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchSentry enforces, expressed in your own words.
 
-| | SAST | ArchitectGuard |
+| | SAST | ArchSentry |
 |---|---|---|
 | Finds CVEs / insecure APIs | ✅ | ➖ (run SAST too) |
 | Enforces *your* team's architecture | ➖ | ✅ |
@@ -22,14 +22,14 @@ SAST tools find *known vulnerability patterns* (CVEs, insecure APIs). They have 
 
 ## How it works
 
-1. `architectguard.yml` in your repo declares structured rules (a `pattern` or `semgrep` matcher + paths + severity + a description).
-2. On every `pull_request.opened` / `pull_request.synchronize`, ArchitectGuard reads the contract from the base branch, fetches **only the changed code files**, and runs the deterministic engine in-memory.
+1. `archsentry.yml` in your repo declares structured rules (a `pattern` or `semgrep` matcher + paths + severity + a description).
+2. On every `pull_request.opened` / `pull_request.synchronize`, ArchSentry reads the contract from the base branch, fetches **only the changed code files**, and runs the deterministic engine in-memory.
 3. Violations are posted as a PR comment — with an LLM-written explanation when configured.
 
 The same engine powers a local CLI, so you can run the exact same checks in CI or locally:
 
 ```bash
-pnpm scan --config architectguard.yml --path .
+pnpm scan --config archsentry.yml --path .
 ```
 
 ## Quick start
@@ -38,7 +38,7 @@ pnpm scan --config architectguard.yml --path .
 
 ```bash
 pnpm install
-pnpm scan --config samples/dummy-target/architectguard.yml --path samples/dummy-target
+pnpm scan --config samples/dummy-target/archsentry.yml --path samples/dummy-target
 ```
 
 Flags the seeded violation in `controllers/user.controller.ts` and exits non-zero on `error` severity — a drop-in CI gate.
@@ -51,7 +51,7 @@ cp .env.example .env      # then fill in APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PAT
 pnpm start               # Probot under tsx + smee-client webhook proxy
 ```
 
-Register the app on GitHub (browser flow or manually), install it on a repo that has `architectguard.yml`, and push a PR. See `architectguard.yml.example` for the contract format and `.env.example` for the required variables.
+Register the app on GitHub (browser flow or manually), install it on a repo that has `archsentry.yml`, and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
 
 ## Explanations (optional, free)
 
@@ -62,7 +62,7 @@ Every violation comment can include a plain-English explanation. Detection is al
 - `OLLAMA_MODEL` → a free local model via [Ollama](https://ollama.com) (private, no key).
 - none → built-in template fallback (always works).
 
-If the chosen model errors, ArchitectGuard silently falls back so the comment always posts.
+If the chosen model errors, ArchSentry silently falls back so the comment always posts.
 
 ## Rule schema
 
