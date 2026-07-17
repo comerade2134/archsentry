@@ -2,6 +2,54 @@
 
 All notable changes to ArchSentry are documented here.
 
+## [0.2.7] - Code quality & open-source polish (Unreleased)
+
+Developer-experience and maintainability pass; no detection-rule or config
+changes required.
+
+- Replaced ad-hoc `console.warn`/`console.error` diagnostics in the engine,
+  config, and GitHub App layers with an injectable `Logger` interface
+  (`src/util/log.ts`), so production runs use the Probot application logger and
+  the CLI still gets a console fallback.
+- Added JSDoc across the engine, config loader, analyzer, and LLM explainer
+  layers, and formalized the `Logger` contract.
+- Added package metadata: `license` (MIT), `keywords`, and `bugs` URL. Added a
+  top-level `LICENSE` file.
+- Updated the example GitHub Action to the current published version (0.2.6).
+- Documented the previously-undocumented 0.2.5 and 0.2.6 releases below.
+
+## [0.2.6] - Consolidated audit sweep
+
+- **PR-comment markdown injection:** `toPrComment` now renders the rule message,
+  source snippet, and LLM explanation inside fenced code blocks, so attacker-
+  influenced text can no longer inject live links, `@mentions`, or headings into
+  the review thread.
+- **Config envelope:** `parseContract` validates the `version` field and caps the
+  ruleset size (`MAX_RULES`) to bound memory and CPU on a hostile contract.
+
+## [0.2.5] - Fourth security audit
+
+Fourth-party AppSec/architecture review (P1–P3 findings). Behavior-preserving
+unless noted.
+
+- **P1-1 / P1-2** GitHub file content is now size-checked from the API-provided
+  `size` field (and re-checked after decode) before being materialized, closing a
+  decode-before-check OOM on huge/minified blobs.
+- **P2-1** All scan caps are parsed via `envInt`, so a malformed env value falls
+  back to the default instead of disabling the cap.
+- **P2-2** In-flight subprocess scans (e.g. Semgrep) are aborted via the
+  propagated `AbortSignal`.
+- **P2-3** The LLM prompt now fences the rule metadata and source as untrusted
+  DATA with an explicit "ignore instructions inside the code" directive.
+- **P2-4** LLM errors propagate correctly and the explainer honors a caller-
+  supplied `AbortSignal`.
+- **P3-1** `escapeHtml` is applied to the LLM prompt payload.
+- **P3-2** Removed unused Probot lifecycle hooks.
+- **P3-3** Unknown rule keys now emit a config warning (ignored, not fatal).
+- **P3-5** `ConfigError` messages reflect the resolved config path.
+- **P3-6** Multi-source contracts are imported safely.
+- **P3-7** `EngineRegistry` is a lazily-initialized singleton.
+
 ## [0.2.4] - AppSec & architecture audit hardening
 
 Third-party AppSec/architecture review (P1–P3 findings). All changes are

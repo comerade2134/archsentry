@@ -2,6 +2,7 @@ import type { Contract } from "../config/types";
 import { walkSourceFiles } from "./walk";
 import { EngineRegistry } from "../engine/registry";
 import type { Violation, SourceFile } from "../engine/types";
+import { consoleLogger, type Logger } from "../util/log";
 
 // Lazily-created singleton registry (audit P3-7): constructing per-scan is
 // cheap now that engine resolution is async, but a single shared instance
@@ -12,9 +13,16 @@ function getRegistry(): EngineRegistry {
   return _registry;
 }
 
-// Filesystem-backed scan (used by the CLI).
-export async function analyze(root: string, contract: Contract): Promise<Violation[]> {
-  return runEngine(walkSourceFiles(root), contract);
+/**
+ * Filesystem-backed scan (used by the CLI). Walks `root` and runs the
+ * configured engines over every discovered source file.
+ */
+export async function analyze(
+  root: string,
+  contract: Contract,
+  logger: Logger = consoleLogger,
+): Promise<Violation[]> {
+  return runEngine(walkSourceFiles(root), contract, undefined, logger);
 }
 
 // In-memory scan (used by the GitHub App). The engine is path-agnostic:
@@ -26,18 +34,20 @@ export async function analyzeSources(
   sources: Record<string, string>,
   contract: Contract,
   signal?: AbortSignal,
+  logger: Logger = consoleLogger,
 ): Promise<Violation[]> {
   const files: SourceFile[] = Object.entries(sources).map(([path, content]) => ({
     path,
     content,
   }));
-  return runEngine(files, contract, signal);
+  return runEngine(files, contract, signal, logger);
 }
 
 async function runEngine(
   files: SourceFile[],
   contract: Contract,
   signal?: AbortSignal,
+  logger: Logger = consoleLogger,
 ): Promise<Violation[]> {
-  return getRegistry().run(files, contract, signal);
+  return getRegistry().run(files, contract, signal, logger);
 }

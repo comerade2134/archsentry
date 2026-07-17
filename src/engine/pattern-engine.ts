@@ -1,11 +1,17 @@
 import type { Rule } from "../config/types";
 import type { RuleEngine, SourceFile, Violation } from "./types";
 import { mapWithConcurrency } from "../util/async";
+import { consoleLogger, type Logger } from "../util/log";
 
+/**
+ * Compile a rule's patterns into a single `RegExp`. With `regex: false` (the
+ * default) every metacharacter is escaped so the pattern matches the literal
+ * text — safe and ReDoS-free. With `regex: true` the author's patterns are used
+ * as-is (they own any catastrophic-backtracking risk; see audit P3-2). The
+ * alternatives are joined with `|` so a rule with several patterns compiles to
+ * one pass over each line.
+ */
 function toRegExp(patterns: string[], regex: boolean): RegExp {
-  // `regex: true` treats patterns as real RegExp (author owns any ReDoS risk,
-  // audit P3-2). Default `false` escapes them so they match literally — safe
-  // and non-regex by default.
   const parts = patterns.map((p) => (regex ? p : p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   return new RegExp(parts.join("|"));
 }
@@ -18,6 +24,12 @@ function toRegExp(patterns: string[], regex: boolean): RegExp {
 const MAX_GLOB_CACHE = 256;
 const globCache = new Map<string, RegExp>();
 
+/**
+ * Translate a glob (supporting `**`, `*` and `?`) into an anchored `RegExp`.
+ * Brace expansion is intentionally not implemented — rule authors list
+ * extensions explicitly (see {@link DEFAULT_CODE_GLOBS}). The cache makes the
+ * per-file cost O(1) after the first compilation of a given glob.
+ */
 export function globToRegExp(glob: string): RegExp {
   const cached = globCache.get(glob);
   if (cached) return cached;
@@ -70,9 +82,26 @@ function inScope(file: SourceFile, rule: Rule): boolean {
   return true;
 }
 
+/**
+ * Deterministic, zero-dependency scanning engine.
+ *
+ * Every rule whose `type` is `"pattern"` is handled here. The engine is
+ * path-agnostic and fully in-memory: it never reads from disk (audit P2-B) and
+ * receives the already-fetched file contents from the caller. For each file it
+ * tests every line against the compiled rule `RegExp`; matches become
+ * {@link Violation}s. Because this runs synchronously per line, the scan yields
+ * every 1024 lines (`await Promise.resolve()`) and is wrapped in bounded
+ * concurrency by the caller so a large file or PR can never monopolise the
+ * event loop and void the global timeout (audit P2-1).
+ */
 export class PatternEngine implements RuleEngine {
   // Zero-dep: reads the already-in-memory content, never touches disk (audit P2-B).
   needsDisk = false;
+
+  // The logger is accepted for interface uniformity (engines are constructed by
+  // the registry, which forwards the active logger); PatternEngine itself is
+  // silent, so it is intentionally unused here.
+  constructor(private readonly _logger: Logger = consoleLogger) {}
 
   supports(type: string): boolean {
     return type === "pattern";
