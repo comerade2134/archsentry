@@ -43,10 +43,19 @@ export function toPrComment(violations: Violation[]): string {
   }
   const body = violations
     .map((v) => {
-      let line = `- **${escapeHtml(v.ruleId)}** (${v.severity}) in \`${escapeHtml(v.file)}:${v.line}\` — ${escapeHtml(v.message)}\n  \`${escapeHtml(v.snippet)}\``;
-      if (v.explanation) line += `\n\n  ${escapeHtml(v.explanation)}`;
-      return line;
+      // Identifiers go in inline code spans (markdown-inert). The rule message,
+      // source snippet, and LLM explanation are all attacker-influenced text
+      // (the message comes from the PR's own archsentry.yml; the explanation is
+      // model output) — they're wrapped in fenced code blocks so GitHub renders
+      // them as literal text. This kills markdown injection (live links,
+      // @mentions, headings) that the HTML-only escape in formatReport missed
+      // (consolidated audit sweep).
+      const head = `- \`${escapeHtml(v.ruleId)}\` (${escapeHtml(v.severity)}) in \`${escapeHtml(v.file)}:${v.line}\`\n`;
+      const msg = v.message ? `  \`\`\`\n${escapeHtml(v.message)}\n  \`\`\`\n` : "";
+      const snip = v.snippet ? `  \`\`\`\n${escapeHtml(v.snippet)}\n  \`\`\`\n` : "";
+      const exp = v.explanation ? `  \`\`\`\n${escapeHtml(v.explanation)}\n  \`\`\`\n` : "";
+      return head + msg + snip + exp;
     })
-    .join("\n\n");
+    .join("\n");
   return `### ArchSentry — Architectural Rule Violations\n\n${body}\n\n> Fix the flagged lines or update \`archsentry.yml\`.`;
 }
