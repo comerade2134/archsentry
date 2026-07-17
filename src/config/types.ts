@@ -2,6 +2,10 @@ export type Severity = "error" | "warn";
 
 export interface PatternMatch {
   patterns: string[];
+  // When true, `patterns` are treated as real RegExp (author owns any ReDoS
+  // risk, audit P3-2). Default false → patterns are matched literally (and
+  // regex-special chars are escaped), which is safe and the common case.
+  regex?: boolean;
   paths?: string[];
   exclude?: string[];
 }

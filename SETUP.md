@@ -22,8 +22,13 @@ Three ways to run ArchSentry. Pick whichever fits your workflow.
    - Homepage URL: `https://github.com/comerade2134/archsentry`
    - Webhook URL: your Smee channel, e.g. `https://smee.io/xxxx`
    - Webhook secret: any string; set it as `WEBHOOK_SECRET` in `.env`
-   - Permissions: _Repository contents_ (read), _Pull requests_ (read & write)
+   - Permissions (read the trade-off note below):
+     - _Repository contents_: **read** — read `archsentry.yml` and file blobs
+     - _Pull requests_: **read** — list files changed in a PR
+     - _Issues_: **write** — **REQUIRED**: ArchSentry posts PR conversation comments through the Issues API (`octokit.rest.issues.createComment`); there is no narrower "PR-comment-only" GitHub permission. As documented, granting only _Pull requests_ write would 403 at runtime.
    - Subscribe to the **Pull request** event
+
+> **Least-privilege note.** Posting inline review comments via `pulls.createComment` would need only _Pull requests: write_, but ArchSentry posts a single top-level summary comment, which the Issues API serves — so _Issues: write_ is unavoidable with the current API choice. _Issues: write_ also permits creating/closing real issues; if that's a concern, self-host the CLI/Action path (Options B/C) instead of the App.
 
 3. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Set `APP_ID` and `PRIVATE_KEY_PATH` in `.env`.
 4. Install the app on the repos you want to guard.

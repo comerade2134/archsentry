@@ -22,17 +22,37 @@ export async function mapWithConcurrency<T, R>(
 
 // Race `promise` against a timeout. On expiry the returned promise rejects with
 // the provided (or a default) error; `promise` is left to settle on its own,
-// which is acceptable for a detached background task (audit P2-C).
-export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+// which is acceptable for a detached background task (audit P2-C). Optionally
+// takes an external AbortSignal so a single deadline can both reject this race
+// AND abort any abortable child work (e.g. a Semgrep subprocess, audit P2-4).
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  external?: AbortSignal,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`operation timed out after ${ms}ms`)), ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new Error("operation aborted"));
+    };
+    if (external) {
+      if (external.aborted) {
+        clearTimeout(timer);
+        reject(new Error("operation aborted"));
+        return;
+      }
+      external.addEventListener("abort", onAbort, { once: true });
+    }
     promise.then(
       (v) => {
         clearTimeout(timer);
+        external?.removeEventListener("abort", onAbort);
         resolve(v);
       },
       (e) => {
         clearTimeout(timer);
+        external?.removeEventListener("abort", onAbort);
         reject(e);
       },
     );

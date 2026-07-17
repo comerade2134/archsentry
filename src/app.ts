@@ -117,7 +117,20 @@ export async function handlePr(context: PrContext): Promise<void> {
         ref: pull_request.head.sha,
       });
       if (Array.isArray(res.data) || !("content" in res.data)) return null;
+
+      // Guard BEFORE we pay to base64-decode: GitHub returns the decoded byte
+      // size up front, so a huge blob never gets materialized in RAM (audit
+      // P1-1 — fixes the OOM where decode ran before the size check).
+      if (typeof res.data.size !== "number" || res.data.size > MAX_FILE_BYTES) {
+        console.warn(
+          `[archsentry] skipping ${file.filename}: ${res.data.size ?? "?"} bytes ` +
+            `exceeds per-file cap (${MAX_FILE_BYTES})`,
+        );
+        return null;
+      }
+
       const content = decodeBlob(res.data.content);
+      // Belt-and-suspenders for any provider that under-reports `size`.
       if (Buffer.byteLength(content) > MAX_FILE_BYTES) {
         console.warn(`[archsentry] skipping ${file.filename}: exceeds per-file size cap`);
         return null;
@@ -169,9 +182,16 @@ export async function handlePr(context: PrContext): Promise<void> {
   }
 
   // 4. Run the deterministic engine (no LLM cost). Wrapped in a global deadline
-  //    so a stuck scan can't pin the worker (audit P2-C).
+  //    so a stuck scan can't pin the worker (audit P2-C). The same AbortSignal
+  //    also aborts any long-running child process (e.g. Semgrep) and in-flight
+  //    LLM calls (audits P2-2, P2-4).
+  const deadline = AbortSignal.timeout(PIPELINE_TIMEOUT_MS);
   try {
-    const violations = await withTimeout(analyzeSources(sources, contract), PIPELINE_TIMEOUT_MS);
+    const violations = await withTimeout(
+      analyzeSources(sources, contract, deadline),
+      PIPELINE_TIMEOUT_MS,
+      deadline,
+    );
 
     // Clean PR → remove a stale comment if we left one, then bail.
     if (violations.length === 0) {
@@ -190,8 +210,6 @@ export async function handlePr(context: PrContext): Promise<void> {
     //    selected from env (OpenRouter key > OpenAI key > Ollama > template).
     //    We pass only a windowed slice of the file (never the whole file) to
     //    the LLM — bounds the prompt and token cost on large files (audit H3).
-    //    A deadline signal aborts in-flight LLM calls if we run long (P2-C).
-    const deadline = AbortSignal.timeout(PIPELINE_TIMEOUT_MS);
     const contextFor = (v: Violation): string => {
       const full = sources[v.file];
       return full ? windowedContext(full, v.line) : v.snippet;
