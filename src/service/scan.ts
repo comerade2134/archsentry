@@ -23,15 +23,22 @@ export async function attachExplanations(
   );
 }
 
+// Returns a small window of lines around `line` (1-based) from a full file's
+// content. This is what we send to the LLM — never the whole file — so a
+// 10k-line file can't blow the prompt or the token budget (audit H3).
+export function windowedContext(content: string, line: number, before = 6, after = 5): string {
+  const lines = content.split(/\r?\n/);
+  const start = Math.max(0, line - before - 1);
+  const end = Math.min(lines.length, line + after);
+  return lines.slice(start, end).join("\n");
+}
+
 // Builds a context provider that reads a few lines around the violation from
 // disk — used by the CLI path. The App uses an in-memory provider instead.
 export function diskContext(root: string): (v: Violation) => string {
   return (v) => {
     try {
-      const lines = readFileSync(join(root, v.file), "utf8").split(/\r?\n/);
-      const start = Math.max(0, v.line - 6);
-      const end = Math.min(lines.length, v.line + 5);
-      return lines.slice(start, end).join("\n");
+      return windowedContext(readFileSync(join(root, v.file), "utf8"), v.line);
     } catch {
       return v.snippet;
     }

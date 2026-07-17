@@ -35,4 +35,21 @@ describe("formatter", () => {
     expect(out).toContain("r1");
     expect(out).toContain("`a.ts:2`");
   });
+
+  it("escapes HTML in the snippet and explanation to prevent injection (audit M1)", () => {
+    const hostile: Violation = {
+      ruleId: "r2",
+      severity: "error",
+      file: "x.ts",
+      line: 1,
+      snippet: 'const s = "<img src=x onerror=alert(1)>";',
+      message: "no html",
+      explanation: "Fix the `<script>` tag.",
+    };
+    const out = toPrComment([hostile]);
+    expect(out).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(out).not.toContain("<img src=x");
+    expect(out).toContain("&lt;script&gt;");
+    expect(out).not.toContain("<script>");
+  });
 });

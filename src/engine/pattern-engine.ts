@@ -6,7 +6,14 @@ function toRegExp(patterns: string[]): RegExp {
   return new RegExp(escaped.join("|"));
 }
 
+// Glob → RegExp is somewhat expensive and the same globs (e.g. the default
+// code-glob set) are compiled on every file/rule pair. Cache by glob string so
+// a rule scanning 500 files compiles each glob exactly once (perf fix P2).
+const globCache = new Map<string, RegExp>();
+
 export function globToRegExp(glob: string): RegExp {
+  const cached = globCache.get(glob);
+  if (cached) return cached;
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i] as string;
@@ -32,7 +39,9 @@ export function globToRegExp(glob: string): RegExp {
       re += c;
     }
   }
-  return new RegExp(`^${re}$`);
+  const result = new RegExp(`^${re}$`);
+  globCache.set(glob, result);
+  return result;
 }
 
 function matchesGlob(path: string, globs: string[]): boolean {

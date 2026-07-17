@@ -8,6 +8,11 @@ const SYSTEM_PROMPT =
   "You are ArchSentry, a concise code-review bot. Explain to a developer, in 2-3 plain sentences, " +
   "why an architectural rule was violated and how to fix it. Reference the specific code. No preamble.";
 
+// Bound every LLM call so a slow/hung endpoint can't stall the scan (audit H2).
+// Overridable via env. On timeout the fetch rejects and the caller falls back
+// to the free template explainer.
+const LLM_TIMEOUT_MS = Number(process.env.ARCHSENTRY_LLM_TIMEOUT_MS ?? 30_000);
+
 function buildPrompt(v: Violation, codeContext: string): string {
   return (
     `${SYSTEM_PROMPT}\n\n` +
@@ -30,6 +35,7 @@ export class OpenAIExplainer implements Explainer {
   async explain(v: Violation, codeContext: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
@@ -60,6 +66,7 @@ export class OllamaExplainer implements Explainer {
   async explain(v: Violation, codeContext: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: this.model,

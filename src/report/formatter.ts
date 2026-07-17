@@ -2,6 +2,13 @@ import type { Violation } from "../engine/types";
 
 export type Format = "text" | "json";
 
+// A violation's snippet (raw source) and explanation (LLM output) are
+// attacker-influenced text. Escaping before we drop them into a Markdown PR
+// comment prevents HTML/JS injection into the review thread (audit M1).
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function formatReport(violations: Violation[], format: Format): string {
   if (format === "json") {
     return JSON.stringify({ violations }, null, 2);
@@ -13,10 +20,10 @@ export function formatReport(violations: Violation[], format: Format): string {
   const lines: string[] = [];
   lines.push(`❌ ArchSentry found ${violations.length} violation(s):\n`);
   for (const v of violations) {
-    lines.push(`  • [${v.severity}] ${v.ruleId}  ${v.file}:${v.line}`);
-    lines.push(`    ${v.message}`);
-    lines.push(`    > ${v.snippet}`);
-    if (v.explanation) lines.push(`    ${v.explanation}`);
+    lines.push(`  • [${v.severity}] ${escapeHtml(v.ruleId)}  ${escapeHtml(v.file)}:${v.line}`);
+    lines.push(`    ${escapeHtml(v.message)}`);
+    lines.push(`    > ${escapeHtml(v.snippet)}`);
+    if (v.explanation) lines.push(`    ${escapeHtml(v.explanation)}`);
     lines.push("");
   }
   return lines.join("\n");
@@ -28,8 +35,8 @@ export function toPrComment(violations: Violation[]): string {
   }
   const body = violations
     .map((v) => {
-      let line = `- **${v.ruleId}** (${v.severity}) in \`${v.file}:${v.line}\` — ${v.message}\n  \`${v.snippet}\``;
-      if (v.explanation) line += `\n\n  ${v.explanation}`;
+      let line = `- **${escapeHtml(v.ruleId)}** (${v.severity}) in \`${escapeHtml(v.file)}:${v.line}\` — ${escapeHtml(v.message)}\n  \`${escapeHtml(v.snippet)}\``;
+      if (v.explanation) line += `\n\n  ${escapeHtml(v.explanation)}`;
       return line;
     })
     .join("\n\n");

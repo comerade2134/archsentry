@@ -71,6 +71,8 @@ pnpm start               # Probot under tsx + smee-client webhook proxy
 
 Then install it on a repo that has `archsentry.yml` and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
 
+> **Note on the published package.** The `archsentry` package on npm is the **CLI only** (the `scan` command) — `probot` is a _dev_ dependency and is not bundled, so `pnpm dlx archsentry` can't run the App. To self-host the GitHub App you clone this repo and run `pnpm start` (the App host lives here, not on npm). The hosted app at `comerade2134/archsentry` is the managed option.
+
 ### As a GitHub Action (zero infra)
 
 Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your repo as `.github/workflows/archsentry.yml`. It installs the published `archsentry` CLI from npm and runs it on every PR — no app registration required.

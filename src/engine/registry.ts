@@ -1,7 +1,10 @@
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 import type { Contract } from "../config/types";
 import type { RuleEngine, Violation, SourceFile } from "./types";
 import { PatternEngine } from "./pattern-engine";
-import { SemgrepEngine } from "./semgrep";
+import { SemgrepEngine, safeJoin } from "./semgrep";
 
 export class EngineRegistry {
   private engines: RuleEngine[] = [];
@@ -22,17 +25,31 @@ export class EngineRegistry {
   }
 
   async run(files: SourceFile[], contract: Contract): Promise<Violation[]> {
-    const all: Violation[] = [];
-    for (const rule of contract.rules) {
-      const engine = this.engineFor(rule.type);
-      if (!engine) {
-        console.warn(
-          `[warn] no engine for rule type "${rule.type}" (rule "${rule.id}") — skipping`,
-        );
-        continue;
+    // Write the source tree to a single temp dir and reuse it across every rule
+    // so disk-based engines (Semgrep) don't re-materialize the tree per rule
+    // (perf fix P1).
+    const dir = mkdtempSync(join(tmpdir(), "archsentry-"));
+    try {
+      for (const f of files) {
+        const target = safeJoin(dir, f.path);
+        if (!target) continue;
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, f.content);
       }
-      all.push(...(await engine.scan(files, rule)));
+      const all: Violation[] = [];
+      for (const rule of contract.rules) {
+        const engine = this.engineFor(rule.type);
+        if (!engine) {
+          console.warn(
+            `[warn] no engine for rule type "${rule.type}" (rule "${rule.id}") — skipping`,
+          );
+          continue;
+        }
+        all.push(...(await engine.scan(files, rule, dir)));
+      }
+      return all;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
-    return all;
   }
 }

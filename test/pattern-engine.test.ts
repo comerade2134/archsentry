@@ -78,6 +78,12 @@ describe("PatternEngine", () => {
     expect(globToRegExp("**/repositories/**").test("src/repositories/x.ts")).toBe(true);
   });
 
+  it("memoizes globToRegExp so the same glob compiles once (perf fix P2)", () => {
+    const a = globToRegExp("**/*.ts");
+    const b = globToRegExp("**/*.ts");
+    expect(a).toBe(b); // same instance, not just equal
+  });
+
   it("scopes pattern rules to code files when paths are omitted", () => {
     const engine = new PatternEngine();
     const unscoped: Rule = {

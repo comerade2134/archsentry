@@ -66,13 +66,12 @@ export class SemgrepEngine implements RuleEngine {
     return false;
   }
 
-  async scan(files: SourceFile[], rule: Rule): Promise<Violation[]> {
+  async scan(files: SourceFile[], rule: Rule, baseDir?: string): Promise<Violation[]> {
     let sgRule: Record<string, unknown>;
     if (rule.type === "pattern") {
       sgRule = toSemgrepRule(rule);
     } else {
-      const native = (rule as Record<string, unknown>).semgrep as
-        Record<string, unknown> | undefined;
+      const native = rule.semgrep;
       if (!native) throw new Error(`Rule "${rule.id}" has type "semgrep" but no "semgrep" field.`);
       sgRule = {
         id: rule.id,
@@ -82,16 +81,22 @@ export class SemgrepEngine implements RuleEngine {
       };
     }
 
-    const dir = mkdtempSync(join(tmpdir(), "archsentry-"));
+    // When `baseDir` is supplied (the registry writes the source tree once and
+    // reuses it across rules — perf fix P1), we scan there instead of
+    // materializing the files again.
+    const ownDir = !baseDir;
+    const dir = baseDir ?? mkdtempSync(join(tmpdir(), "archsentry-"));
     try {
-      for (const f of files) {
-        const target = safeJoin(dir, f.path);
-        if (!target) {
-          console.warn(`[archsentry] skipping unsafe path: ${f.path}`);
-          continue;
+      if (ownDir) {
+        for (const f of files) {
+          const target = safeJoin(dir, f.path);
+          if (!target) {
+            console.warn(`[archsentry] skipping unsafe path: ${f.path}`);
+            continue;
+          }
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, f.content);
         }
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, f.content);
       }
       const ruleFile = join(dir, "rule.yml");
       writeFileSync(ruleFile, stringify({ rules: [sgRule] }));
@@ -112,17 +117,28 @@ export class SemgrepEngine implements RuleEngine {
         };
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      if (ownDir) rmSync(dir, { recursive: true, force: true });
     }
   }
 }
+
+// Semgrep can hang on very large trees; bound it so a stuck subprocess can't
+// pin the bot host indefinitely (audit H2). Overridable via env.
+const SEMGREP_TIMEOUT_MS = Number(process.env.ARCHSENTRY_SEMGREP_TIMEOUT_MS ?? 120_000);
 
 function runSemgrep(ruleFile: string, dir: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     execFile(
       "semgrep",
       ["scan", "--config", ruleFile, "--json", "--quiet", dir],
+      { timeout: SEMGREP_TIMEOUT_MS },
       (err, stdout, stderr) => {
+        // A timeout returns err with code ETIMEDOUT (and the child killed). Give
+        // a specific message rather than a generic "Semgrep failed".
+        if (err && (err as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+          reject(new Error(`Semgrep timed out after ${SEMGREP_TIMEOUT_MS}ms.`));
+          return;
+        }
         if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
           reject(
             new Error(

@@ -72,6 +72,33 @@ describe("loadContract / parseContract", () => {
     rmSync(p);
   });
 
+  it("rejects a semgrep rule with no recognized pattern key (fail-closed, audit M4)", () => {
+    const p = tmp(
+      ".tmp-sg-shape.yml",
+      "version: 1\nrules:\n  - id: r1\n    type: semgrep\n    description: d\n    semgrep:\n      not-a-key: true\n",
+    );
+    expect(() => loadContract(p)).toThrow(/no recognized Semgrep pattern key/);
+    rmSync(p);
+  });
+
+  it("accepts a semgrep rule with a valid pattern key", () => {
+    const p = tmp(
+      ".tmp-sg-ok.yml",
+      "version: 1\nrules:\n  - id: r1\n    type: semgrep\n    description: d\n    semgrep:\n      pattern-either:\n        - pattern: eval(...)\n",
+    );
+    const c = loadContract(p);
+    expect(c.rules[0]?.id).toBe("r1");
+    rmSync(p);
+  });
+
+  it("does not share rule objects across parses (no mutation leakage, audit L4)", () => {
+    const yaml =
+      'version: 1\nrules:\n  - id: r1\n    type: pattern\n    description: d\n    match:\n      patterns: ["x"]\n';
+    const a = parseContract(yaml);
+    const b = parseContract(yaml);
+    expect(a.rules[0]).not.toBe(b.rules[0]);
+  });
+
   it("throws when the root is not a mapping", () => {
     expect(() => parseContract("- just\n- a\n- list\n")).toThrow(ConfigError);
   });

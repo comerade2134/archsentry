@@ -24,7 +24,7 @@ const sgRule: Rule = {
 };
 
 beforeEach(() => {
-  execFileMock.mockImplementation((_c: string, _a: unknown, cb: Cb) =>
+  execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
     cb(null, '{"results":[]}', ""),
   );
 });
@@ -51,7 +51,7 @@ describe("SemgrepEngine (mocked)", () => {
   const engine = new SemgrepEngine();
 
   it("parses findings from semgrep JSON", async () => {
-    execFileMock.mockImplementation((_c: string, _a: unknown, cb: Cb) =>
+    execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
       cb(
         null,
         JSON.stringify({
@@ -76,7 +76,7 @@ describe("SemgrepEngine (mocked)", () => {
   });
 
   it("does not crash on nested file paths (creates parent dirs)", async () => {
-    execFileMock.mockImplementation((_c: string, _a: unknown, cb: Cb) =>
+    execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
       cb(null, '{"results":[]}', ""),
     );
     const out = await engine.scan(
@@ -87,7 +87,7 @@ describe("SemgrepEngine (mocked)", () => {
   });
 
   it("rejects when semgrep crashes with no output (never reports clean)", async () => {
-    execFileMock.mockImplementation((_c: string, _a: unknown, cb: Cb) =>
+    execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
       cb(new Error("boom"), "", "fatal: bad rule"),
     );
     await expect(
@@ -96,7 +96,7 @@ describe("SemgrepEngine (mocked)", () => {
   });
 
   it("rejects when semgrep is not installed (ENOENT)", async () => {
-    execFileMock.mockImplementation((_c: string, _a: unknown, cb: Cb) => {
+    execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) => {
       const e = new Error("spawn ENOENT") as NodeJS.ErrnoException;
       e.code = "ENOENT";
       cb(e, "", "");

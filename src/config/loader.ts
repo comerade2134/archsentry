@@ -36,11 +36,62 @@ export function parseContract(raw: string): Contract {
   return { version: root.version, rules };
 }
 
+// Known Semgrep pattern keys. A semgrep rule must declare at least one or it is
+// misconfigured (it would match nothing or everything) — we reject it so the
+// failure is loud instead of silently wrong (audit M4, fail-closed).
+const SEMGREP_PATTERN_KEYS = [
+  "pattern",
+  "patterns",
+  "pattern-either",
+  "pattern-and",
+  "pattern-not",
+  "pattern-inside",
+  "pattern-not-inside",
+  "pattern-regex",
+  "pattern-where-python",
+  "metavariable-pattern",
+  "metavariable-comparison",
+  "fix",
+  "fix-regex",
+  "taint-mode",
+  "mode",
+];
+
+function validateSemgrepRule(sg: unknown, where: string): void {
+  if (!sg || typeof sg !== "object" || Object.keys(sg as object).length === 0) {
+    throw new ConfigError(
+      `${where} (type "semgrep") requires a non-empty "semgrep" mapping (e.g. pattern / patterns / pattern-either).`,
+    );
+  }
+  const map = sg as Record<string, unknown>;
+  if (!SEMGREP_PATTERN_KEYS.some((k) => k in map)) {
+    throw new ConfigError(
+      `${where} (type "semgrep") has no recognized Semgrep pattern key. ` +
+        `Expected one of: ${SEMGREP_PATTERN_KEYS.join(", ")}.`,
+    );
+  }
+  for (const key of [
+    "patterns",
+    "pattern-either",
+    "pattern-and",
+    "pattern-not",
+    "pattern-inside",
+    "pattern-not-inside",
+  ]) {
+    const val = map[key];
+    if (val !== undefined && !Array.isArray(val)) {
+      throw new ConfigError(`${where} (type "semgrep"): "${key}" must be a list.`);
+    }
+  }
+}
+
 function validateRule(raw: unknown, index: number): Rule {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new ConfigError(`Rule at index ${index} must be a mapping.`);
   }
-  const r = raw as Record<string, unknown>;
+  // Clone before mutating so the caller's parsed object is never altered
+  // (audit L4 — keeps parseContract idempotent and side-effect free).
+  const r = { ...(raw as Record<string, unknown>) };
   const where = typeof r.id === "string" ? `Rule "${r.id}"` : `Rule at index ${index}`;
 
   if (typeof r.id !== "string" || r.id.length === 0) {
@@ -79,12 +130,7 @@ function validateRule(raw: unknown, index: number): Rule {
   }
 
   if (r.type === "semgrep") {
-    const sg = r.semgrep as Record<string, unknown> | undefined;
-    if (!sg || typeof sg !== "object" || Object.keys(sg).length === 0) {
-      throw new ConfigError(
-        `${where} (type "semgrep") requires a non-empty "semgrep" mapping (e.g. pattern / patterns / pattern-either).`,
-      );
-    }
+    validateSemgrepRule(r.semgrep, where);
   }
 
   // Centralize the default severity so every engine sees the same value.

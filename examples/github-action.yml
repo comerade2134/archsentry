@@ -23,6 +23,10 @@ jobs:
           node-version: 20
       - name: Install pnpm
         run: npm install -g pnpm@10
+      # Pin to a published version. `archsentry@0.2.1` is a mutable tag — for
+      # supply-chain hardening, pin to the exact npm tarball by appending its
+      # integrity hash, e.g. `archsentry@0.2.1 --hash sha512-...`. The hash is
+      # enforced by pnpm/npm, so a compromised tag can't swap the binary.
       - name: Install ArchSentry CLI
         run: pnpm dlx archsentry@0.2.1 --version
       - name: Run Scan
