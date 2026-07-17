@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { loadContract, parseContract, ConfigError } from "../src/config/loader";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -110,5 +110,31 @@ describe("loadContract / parseContract", () => {
     );
     expect(() => loadContract(p)).toThrow(/version/);
     rmSync(p);
+  });
+
+  it("warns (but does not fail) on duplicate rule ids (audit P3-H)", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const yaml =
+      "version: 1\n" +
+      "rules:\n" +
+      '  - id: dup\n    type: pattern\n    description: d\n    match:\n      patterns: ["x"]\n' +
+      '  - id: dup\n    type: pattern\n    description: d2\n    match:\n      patterns: ["y"]\n';
+    const c = parseContract(yaml);
+    expect(c.rules).toHaveLength(2);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('duplicate rule id "dup"'));
+    spy.mockRestore();
+  });
+
+  it("returns fully-typed Rule objects with no casts (audit P3-G)", () => {
+    const yaml =
+      'version: 1\nrules:\n  - id: r1\n    type: pattern\n    severity: warn\n    description: d\n    match:\n      patterns: ["x"]\n';
+    const c = parseContract(yaml);
+    expect(c.rules[0]).toEqual({
+      id: "r1",
+      type: "pattern",
+      severity: "warn",
+      description: "d",
+      match: { patterns: ["x"] },
+    });
   });
 });

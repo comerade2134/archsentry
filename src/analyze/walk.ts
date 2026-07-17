@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { SourceFile } from "../engine/types";
 
@@ -10,13 +10,23 @@ export function walkSourceFiles(root: string): SourceFile[] {
   const visit = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       const abs = join(dir, entry);
-      const st = statSync(abs);
-      if (st.isDirectory()) {
+      // lstatSync (not statSync) so symlinks are reported as links rather than
+      // being followed — statSync would chase a symlink pointing at a parent
+      // directory and recurse forever (audit P3-D). We skip symlinks entirely.
+      let st;
+      try {
+        st = lstatSync(abs);
+      } catch {
+        continue;
+      }
+      if (st.isSymbolicLink()) {
+        continue;
+      } else if (st.isDirectory()) {
         if (SKIP_DIRS.has(entry)) continue;
         visit(abs);
       } else if (st.isFile()) {
         const rel = relative(root, abs).split("\\").join("/");
-        out.push({ path: rel, absolutePath: abs, content: readFileSync(abs, "utf8") });
+        out.push({ path: rel, content: readFileSync(abs, "utf8") });
       }
     }
   };

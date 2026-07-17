@@ -6,12 +6,10 @@ import type { SourceFile } from "../src/engine/types";
 const files: SourceFile[] = [
   {
     path: "controllers/a.ts",
-    absolutePath: "",
     content: 'await db.query("INSERT INTO users VALUES (1)");',
   },
   {
     path: "repositories/b.ts",
-    absolutePath: "",
     content: 'db.query("INSERT INTO users VALUES (1)");',
   },
 ];
@@ -29,44 +27,42 @@ const rule: Rule = {
 };
 
 describe("PatternEngine", () => {
-  it("flags violations outside excluded paths", () => {
+  it("flags violations outside excluded paths", async () => {
     const engine = new PatternEngine();
-    const v = engine.scan(files, rule);
+    const v = await engine.scan(files, rule);
     expect(v).toHaveLength(1);
     expect(v[0]?.file).toBe("controllers/a.ts");
     expect(v[0]?.severity).toBe("error");
   });
 
-  it("ignores files in excluded paths", () => {
+  it("ignores files in excluded paths", async () => {
     const engine = new PatternEngine();
-    const onlyRepo = engine.scan([files[1] as SourceFile], rule);
+    const onlyRepo = await engine.scan([files[1] as SourceFile], rule);
     expect(onlyRepo).toHaveLength(0);
   });
 
-  it("reports the correct line number", () => {
+  it("reports the correct line number", async () => {
     const engine = new PatternEngine();
     const multi: SourceFile[] = [
       {
         path: "c.ts",
-        absolutePath: "",
         content: 'const x = 1;\nconst y = 2;\ndb.query("SELECT 1");\n',
       },
     ];
-    const v = engine.scan(multi, rule);
+    const v = await engine.scan(multi, rule);
     expect(v[0]?.line).toBe(3);
   });
 
-  it("reports every violating line, not just the first", () => {
+  it("reports every violating line, not just the first", async () => {
     const engine = new PatternEngine();
     const multi: SourceFile[] = [
       {
         path: "c.ts",
-        absolutePath: "",
         content:
           'db.query("INSERT INTO a");\ndb.query("INSERT INTO b");\ndoThing();\ndb.query("INSERT INTO c");',
       },
     ];
-    const v = engine.scan(multi, rule);
+    const v = await engine.scan(multi, rule);
     expect(v).toHaveLength(3);
     expect(v.map((x) => x.line)).toEqual([1, 2, 4]);
   });
@@ -84,7 +80,7 @@ describe("PatternEngine", () => {
     expect(a).toBe(b); // same instance, not just equal
   });
 
-  it("scopes pattern rules to code files when paths are omitted", () => {
+  it("scopes pattern rules to code files when paths are omitted", async () => {
     const engine = new PatternEngine();
     const unscoped: Rule = {
       id: "r",
@@ -94,14 +90,14 @@ describe("PatternEngine", () => {
       match: { patterns: ["INSERT"] },
     };
     const files: SourceFile[] = [
-      { path: "a.ts", absolutePath: "", content: '"INSERT"' },
-      { path: "lock.json", absolutePath: "", content: '"INSERT"' },
+      { path: "a.ts", content: '"INSERT"' },
+      { path: "lock.json", content: '"INSERT"' },
     ];
-    const v = engine.scan(files, unscoped);
+    const v = await engine.scan(files, unscoped);
     expect(v.map((x) => x.file)).toEqual(["a.ts"]);
   });
 
-  it("matches lines split on CRLF without leaking carriage returns", () => {
+  it("matches lines split on CRLF without leaking carriage returns", async () => {
     const engine = new PatternEngine();
     const rule: Rule = {
       id: "r",
@@ -111,7 +107,7 @@ describe("PatternEngine", () => {
       match: { patterns: ["INSERT"], paths: ["**/*.ts"] },
     };
     const content = 'const a = 1;\r\nconst b = "INSERT INTO x";\r\nconst c = 2;\r\n';
-    const v = engine.scan([{ path: "c.ts", absolutePath: "", content }], rule);
+    const v = await engine.scan([{ path: "c.ts", content }], rule);
     expect(v).toHaveLength(1);
     expect(v[0]?.snippet).toBe('const b = "INSERT INTO x";');
     expect(v[0]?.snippet).not.toContain("\r");

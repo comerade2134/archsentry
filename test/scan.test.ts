@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { diskContext, windowedContext } from "../src/service/scan";
+import { diskContext, windowedContext, attachExplanations } from "../src/service/scan";
 import type { Violation } from "../src/engine/types";
+import type { Explainer } from "../src/explain/llm";
 
 describe("diskContext", () => {
   it("returns lines around the violation", () => {
@@ -55,5 +56,36 @@ describe("windowedContext (audit H3: never send the whole file to the LLM)", () 
   it("clamps to the start of the file", () => {
     const out = windowedContext(big, 1);
     expect(out.split("\n")[0]).toBe("line 1");
+  });
+});
+
+describe("attachExplanations (audit P2-E: cap + bounded LLM calls)", () => {
+  const violations: Violation[] = Array.from({ length: 50 }, (_, i) => ({
+    ruleId: `r${i}`,
+    severity: "error" as const,
+    file: `f${i}.ts`,
+    line: 1,
+    snippet: "x",
+    message: "m",
+  }));
+
+  it("only calls the (paid) explainer for the first ARCHSENTRY_MAX_EXPLAIN violations", async () => {
+    const spy = vi.fn().mockResolvedValue("explanation");
+    const explainer: Explainer = { explain: spy };
+    const out = await attachExplanations(violations, () => "ctx", true, explainer);
+    // Default cap is 30 → only 30 paid calls; the rest get the free template.
+    expect(spy).toHaveBeenCalledTimes(30);
+    expect(out).toHaveLength(50);
+    expect(out[0]?.explanation).toBe("explanation");
+    expect(out[49]?.explanation).toContain("repository layer"); // TemplateExplainer fallback
+  });
+
+  it("returns violations unchanged when explain is false", async () => {
+    const spy = vi.fn();
+    const out = await attachExplanations(violations, () => "ctx", false, {
+      explain: spy,
+    } as unknown as Explainer);
+    expect(spy).not.toHaveBeenCalled();
+    expect(out).toHaveLength(50);
   });
 });

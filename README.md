@@ -88,6 +88,25 @@ Every violation comment can include a plain-English explanation. Detection is al
 
 If the chosen model errors, ArchSentry silently falls back so the comment always posts.
 
+## Tuning & safety limits
+
+All limits are environment variables (read per-PR, so you can tune them without a redeploy). A malformed value falls back to the default rather than silently disabling the limit.
+
+| Variable                           | Default            | Purpose                                                                                                |
+| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `ARCHSENTRY_MAX_FILE_BYTES`        | `524288` (512 KiB) | Skip a single file once fetched if it exceeds this.                                                    |
+| `ARCHSENTRY_MAX_FILE_LINES`        | `5000`             | Pre-filter: don't even download a file whose diff exceeds this many changed lines.                     |
+| `ARCHSENTRY_MAX_FILES`             | `300`              | Skip the whole PR (with a warning comment) if it changes more files.                                   |
+| `ARCHSENTRY_MAX_BYTES`             | `5242880` (5 MiB)  | Skip the whole PR if total changed source exceeds this.                                                |
+| `ARCHSENTRY_FETCH_CONCURRENCY`     | `8`                | Max parallel file downloads.                                                                           |
+| `ARCHSENTRY_PIPELINE_TIMEOUT_MS`   | `9000`             | Hard ceiling for the whole scan; the webhook is acked immediately and the scan runs in the background. |
+| `ARCHSENTRY_MAX_EXPLAIN`           | `30`               | Max violations sent to the (paid) LLM per PR; the rest use the free template.                          |
+| `ARCHSENTRY_EXPLAIN_CONCURRENCY`   | `5`                | Max parallel LLM calls.                                                                                |
+| `ARCHSENTRY_LLM_TIMEOUT_MS`        | `30000`            | Per-LLM-call timeout.                                                                                  |
+| `ARCHSENTRY_MAX_EXPLANATION_CHARS` | `1000`             | Clamp on explanation length rendered into the comment.                                                 |
+
+If ArchSentry cannot read some changed files (missing permission, not found, or rate-limited), it fails **closed**: it posts a warning that enforcement was _not_ verified instead of claiming the PR is clean.
+
 ## Rule schema
 
 ```yaml

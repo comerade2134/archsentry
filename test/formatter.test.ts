@@ -52,4 +52,20 @@ describe("formatter", () => {
     expect(out).toContain("&lt;script&gt;");
     expect(out).not.toContain("<script>");
   });
+
+  it("escapes backticks and quotes so hostile source can't break out of the Markdown code span (audit P3-C)", () => {
+    const hostile: Violation = {
+      ruleId: "r3",
+      severity: "error",
+      file: "x.ts",
+      line: 1,
+      snippet: 'const s = "`${evil}`"; // "quote" \'apostrophe\'',
+      message: "bad",
+    };
+    const out = toPrComment([hostile]);
+    expect(out).toContain("&#96;"); // backtick neutralized
+    expect(out).toContain("&quot;");
+    expect(out).toContain("&#39;");
+    expect(out).not.toContain("`${evil}`");
+  });
 });

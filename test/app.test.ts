@@ -1,5 +1,6 @@
-import app from "../src/app";
+import app, { handlePr } from "../src/app";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Context } from "probot";
 import * as analyzer from "../src/analyze/analyzer";
 
 const CONTRACT = `version: 1
@@ -77,12 +78,15 @@ describe("ArchSentry GitHub App", () => {
     vi.stubEnv("OLLAMA_MODEL", "");
   });
 
+  it("registers a webhook handler", () => {
+    expect(typeof loadHandler()).toBe("function");
+  });
+
   it("posts a comment when a changed file violates a rule", async () => {
-    const handler = loadHandler();
     const { context, createComment, updateComment } = makeContext({
       files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(updateComment).not.toHaveBeenCalled();
     expect(createComment).toHaveBeenCalledWith(
@@ -94,31 +98,28 @@ describe("ArchSentry GitHub App", () => {
   });
 
   it("updates an existing comment instead of duplicating it", async () => {
-    const handler = loadHandler();
     const { context, createComment, updateComment } = makeContext({
       files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
       existingComments: [{ id: 99, body: "<!-- archsentry -->\nold" }],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(updateComment).toHaveBeenCalledTimes(1);
     expect(updateComment).toHaveBeenCalledWith(expect.objectContaining({ comment_id: 99 }));
     expect(createComment).not.toHaveBeenCalled();
   });
 
   it("deletes a stale comment when there are no violations", async () => {
-    const handler = loadHandler();
     const { context, createComment, deleteComment } = makeContext({
       files: [{ filename: "src/user.ts", content: "const x = 1;" }],
       existingComments: [{ id: 42, body: "<!-- archsentry -->\nold violation" }],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(deleteComment).toHaveBeenCalledTimes(1);
     expect(deleteComment).toHaveBeenCalledWith(expect.objectContaining({ comment_id: 42 }));
     expect(createComment).not.toHaveBeenCalled();
   });
 
   it("does nothing when no contract is present", async () => {
-    const handler = loadHandler();
     const createComment = vi.fn();
     const context = {
       payload: {
@@ -133,19 +134,18 @@ describe("ArchSentry GitHub App", () => {
         },
       },
     };
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(createComment).not.toHaveBeenCalled();
   });
 
   it("posts a single comment listing multiple violations", async () => {
-    const handler = loadHandler();
     const { context, createComment } = makeContext({
       files: [
         { filename: "src/a.ts", content: 'const q = "INSERT INTO a";' },
         { filename: "src/b.ts", content: 'const w = "INSERT INTO b";' },
       ],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(createComment).toHaveBeenCalledTimes(1);
     const body = createComment.mock.calls[0]?.[0]?.body as string;
     expect(body).toContain("src/a.ts");
@@ -155,11 +155,10 @@ describe("ArchSentry GitHub App", () => {
   it("posts a comment with a template fallback when the explainer errors", async () => {
     vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
     vi.stubEnv("OPENROUTER_API_KEY", "sk-test");
-    const handler = loadHandler();
     const { context, createComment } = makeContext({
       files: [{ filename: "src/user.ts", content: 'const q = "INSERT INTO users";' }],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     vi.unstubAllGlobals();
     expect(createComment).toHaveBeenCalledTimes(1);
     const body = createComment.mock.calls[0]?.[0]?.body as string;
@@ -170,11 +169,10 @@ describe("ArchSentry GitHub App", () => {
     const spy = vi
       .spyOn(analyzer, "analyzeSources")
       .mockRejectedValueOnce(new Error("scan crashed"));
-    const handler = loadHandler();
     const { context, createComment } = makeContext({
       files: [{ filename: "src/user.ts", content: "const x = 1;" }],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(createComment).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.stringContaining("could not complete the scan") }),
@@ -184,18 +182,56 @@ describe("ArchSentry GitHub App", () => {
 
   it("warns and skips when the PR exceeds the file cap", async () => {
     vi.stubEnv("ARCHSENTRY_MAX_FILES", "1");
-    const handler = loadHandler();
     const { context, createComment } = makeContext({
       files: [
         { filename: "src/a.ts", content: "const x = 1;" },
         { filename: "src/b.ts", content: "const y = 2;" },
       ],
     });
-    await handler(context);
+    await handlePr(context as unknown as Context);
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(createComment).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.stringContaining("exceeds the scan size cap") }),
     );
     vi.unstubAllEnvs();
+  });
+
+  it("fails closed (warns) when a changed file is unreadable (403/404)", async () => {
+    const createComment = vi.fn().mockResolvedValue({});
+    const context = {
+      payload: {
+        repository: { owner: { login: "o" }, name: "r" },
+        pull_request: { number: 7, base: { sha: "b" }, head: { sha: "h" } },
+      },
+      octokit: {
+        rest: {
+          repos: {
+            getContent: vi.fn(({ path }: { path: string }) => {
+              if (path === "archsentry.yml")
+                return Promise.resolve({ data: { content: b64(CONTRACT) } });
+              const e = new Error("Forbidden") as NodeJS.ErrnoException & { status?: number };
+              e.status = 403;
+              return Promise.reject(e);
+            }),
+          },
+          pulls: {
+            listFiles: vi.fn().mockResolvedValue({
+              data: [{ filename: "src/user.ts", status: "modified" }],
+            }),
+          },
+          issues: {
+            createComment,
+            listComments: vi.fn().mockResolvedValue({ data: [] }),
+            updateComment: vi.fn(),
+            deleteComment: vi.fn(),
+          },
+        },
+      },
+    };
+    await handlePr(context as unknown as Context);
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining("could not fully scan") }),
+    );
   });
 });
