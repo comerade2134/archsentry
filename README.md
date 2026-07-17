@@ -81,8 +81,8 @@ Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your
 
 Every violation comment can include a plain-English explanation. Detection is always free; the explainer is chosen from the environment (first match wins):
 
-- `OPENROUTER_API_KEY` → any [OpenRouter](https://openrouter.ai) model, including **free** tiers like `nvidia/nemotron-3-ultra-550b-a55b:free`. No card.
-- `OPENAI_API_KEY` → GPT-4o-mini (billed per call).
+- `OPENROUTER_API_KEY` → any [OpenRouter](https://openrouter.ai) model, including **free** tiers like `nvidia/nemotron-3-ultra-550b-a55b:free`. No card. Checked first, so the free tier wins when both keys are set.
+- `OPENAI_API_KEY` → OpenAI model (`OPENAI_MODEL`, default **gpt-4.1-mini**; billed per call). Override with `OPENAI_MODEL`.
 - `OLLAMA_MODEL` → a free local model via [Ollama](https://ollama.com) (private, no key).
 - none → built-in template fallback (always works).
 
