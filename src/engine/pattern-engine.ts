@@ -63,11 +63,14 @@ function inScope(file: SourceFile, rule: Rule): boolean {
 }
 
 export class PatternEngine implements RuleEngine {
+  // Zero-dep: reads the already-in-memory content, never touches disk (audit P2-B).
+  needsDisk = false;
+
   supports(type: string): boolean {
     return type === "pattern";
   }
 
-  scan(files: SourceFile[], rule: Rule): Violation[] {
+  async scan(files: SourceFile[], rule: Rule): Promise<Violation[]> {
     const match = (rule.match ?? { patterns: [] }) as { patterns?: string[] };
     const patterns = match.patterns ?? [];
     if (!patterns.length) return [];

@@ -66,10 +66,7 @@ describe("SemgrepEngine (mocked)", () => {
         "",
       ),
     );
-    const out = await engine.scan(
-      [{ path: "src/a.ts", absolutePath: "src/a.ts", content: "SELECT 1" }],
-      sgRule,
-    );
+    const out = await engine.scan([{ path: "src/a.ts", content: "SELECT 1" }], sgRule);
     expect(out).toHaveLength(1);
     expect(out[0]?.file).toBe("src/a.ts");
     expect(out[0]?.line).toBe(3);
@@ -79,10 +76,7 @@ describe("SemgrepEngine (mocked)", () => {
     execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
       cb(null, '{"results":[]}', ""),
     );
-    const out = await engine.scan(
-      [{ path: "src/controllers/a.ts", absolutePath: "src/controllers/a.ts", content: "x" }],
-      sgRule,
-    );
+    const out = await engine.scan([{ path: "src/controllers/a.ts", content: "x" }], sgRule);
     expect(out).toEqual([]);
   });
 
@@ -90,9 +84,9 @@ describe("SemgrepEngine (mocked)", () => {
     execFileMock.mockImplementation((_c: string, _a: unknown, _opts: unknown, cb: Cb) =>
       cb(new Error("boom"), "", "fatal: bad rule"),
     );
-    await expect(
-      engine.scan([{ path: "a.ts", absolutePath: "a.ts", content: "x" }], sgRule),
-    ).rejects.toThrow(/Semgrep failed/);
+    await expect(engine.scan([{ path: "a.ts", content: "x" }], sgRule)).rejects.toThrow(
+      /Semgrep failed/,
+    );
   });
 
   it("rejects when semgrep is not installed (ENOENT)", async () => {
@@ -101,8 +95,8 @@ describe("SemgrepEngine (mocked)", () => {
       e.code = "ENOENT";
       cb(e, "", "");
     });
-    await expect(
-      engine.scan([{ path: "a.ts", absolutePath: "a.ts", content: "x" }], sgRule),
-    ).rejects.toThrow(/Semgrep is not installed/);
+    await expect(engine.scan([{ path: "a.ts", content: "x" }], sgRule)).rejects.toThrow(
+      /Semgrep is not installed/,
+    );
   });
 });

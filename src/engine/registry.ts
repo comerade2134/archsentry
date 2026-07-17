@@ -25,16 +25,20 @@ export class EngineRegistry {
   }
 
   async run(files: SourceFile[], contract: Contract): Promise<Violation[]> {
-    // Write the source tree to a single temp dir and reuse it across every rule
-    // so disk-based engines (Semgrep) don't re-materialize the tree per rule
-    // (perf fix P1).
-    const dir = mkdtempSync(join(tmpdir(), "archsentry-"));
+    // Only materialize the source tree to disk when some rule will be handled by
+    // a disk-based engine (Semgrep). Zero-dep pattern-only scans never touch the
+    // filesystem (audit P2-B). Engines that need disk (Semgrep) fall back to
+    // writing their own temp dir when `baseDir` is undefined.
+    const needsDisk = contract.rules.some((r) => this.engineFor(r.type)?.needsDisk === true);
+    const dir = needsDisk ? mkdtempSync(join(tmpdir(), "archsentry-")) : undefined;
     try {
-      for (const f of files) {
-        const target = safeJoin(dir, f.path);
-        if (!target) continue;
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, f.content);
+      if (dir) {
+        for (const f of files) {
+          const target = safeJoin(dir, f.path);
+          if (!target) continue;
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, f.content);
+        }
       }
       const all: Violation[] = [];
       for (const rule of contract.rules) {
@@ -49,7 +53,7 @@ export class EngineRegistry {
       }
       return all;
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      if (dir) rmSync(dir, { recursive: true, force: true });
     }
   }
 }

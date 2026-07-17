@@ -17,7 +17,6 @@ export async function analyzeSources(
 ): Promise<Violation[]> {
   const files: SourceFile[] = Object.entries(sources).map(([path, content]) => ({
     path,
-    absolutePath: path,
     content,
   }));
   return runEngine(files, contract);

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import type { Contract, Rule, Severity } from "./types";
+import type { Contract, Rule, Severity, PatternMatch } from "./types";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
 const VALID_TYPES = ["pattern", "semgrep"] as const;
@@ -33,6 +33,18 @@ export function parseContract(raw: string): Contract {
   }
 
   const rules = root.rules.map((r, i) => validateRule(r, i));
+
+  // A duplicate rule id is almost always a copy/paste mistake. We don't fail
+  // hard (a team may intentionally shadow a base rule), but we surface it so the
+  // author knows enforcement semantics may not be what they expect (audit P3-H).
+  const seen = new Map<string, number>();
+  for (const rule of rules) {
+    seen.set(rule.id, (seen.get(rule.id) ?? 0) + 1);
+  }
+  for (const [id, count] of seen) {
+    if (count > 1) console.warn(`[archsentry] duplicate rule id "${id}" (${count} occurrences).`);
+  }
+
   return { version: root.version, rules };
 }
 
@@ -138,7 +150,18 @@ function validateRule(raw: unknown, index: number): Rule {
   // default ("error") rather than merely warning.
   if (r.severity === undefined) r.severity = "error";
 
-  return r as unknown as Rule;
+  // Build a fully-typed Rule from the validated fields instead of casting the
+  // loose record — keeps the public type honest and avoids `as unknown as Rule`
+  // (audit P3-G).
+  const rule: Rule = {
+    id: r.id as string,
+    type: r.type as "pattern" | "semgrep",
+    severity: r.severity as Severity,
+    description: r.description as string,
+  };
+  if (r.match !== undefined) rule.match = r.match as PatternMatch;
+  if (r.semgrep !== undefined) rule.semgrep = r.semgrep as Record<string, unknown>;
+  return rule;
 }
 
 export function loadContract(path: string): Contract {

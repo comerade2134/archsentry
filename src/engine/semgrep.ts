@@ -5,6 +5,7 @@ import { join, dirname, isAbsolute, normalize, sep } from "node:path";
 import { stringify } from "yaml";
 import type { Rule } from "../config/types";
 import type { RuleEngine, SourceFile, Violation } from "./types";
+import { envInt } from "../util/env";
 
 let _available: boolean | null = null;
 function semgrepAvailable(): boolean {
@@ -58,6 +59,10 @@ interface SemgrepResult {
 }
 
 export class SemgrepEngine implements RuleEngine {
+  // Semgrep scans a directory on disk, so the registry must materialize the
+  // source tree and hand it over via `baseDir` (audit P2-B).
+  needsDisk = true;
+
   // Claims `semgrep` rules always, and `pattern` rules only when the CLI exists
   // — so it transparently takes over from PatternEngine once Semgrep is installed.
   supports(type: string): boolean {
@@ -124,7 +129,7 @@ export class SemgrepEngine implements RuleEngine {
 
 // Semgrep can hang on very large trees; bound it so a stuck subprocess can't
 // pin the bot host indefinitely (audit H2). Overridable via env.
-const SEMGREP_TIMEOUT_MS = Number(process.env.ARCHSENTRY_SEMGREP_TIMEOUT_MS ?? 120_000);
+const SEMGREP_TIMEOUT_MS = envInt("ARCHSENTRY_SEMGREP_TIMEOUT_MS", 120_000);
 
 function runSemgrep(ruleFile: string, dir: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {

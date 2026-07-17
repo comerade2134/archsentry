@@ -4,9 +4,17 @@ export type Format = "text" | "json";
 
 // A violation's snippet (raw source) and explanation (LLM output) are
 // attacker-influenced text. Escaping before we drop them into a Markdown PR
-// comment prevents HTML/JS injection into the review thread (audit M1).
+// comment prevents HTML/JS injection into the review thread (audit M1). We also
+// escape quotes and backticks so the text can't break out of a Markdown code
+// span/attribute, and so a stray backtick can't end a fenced block (audit P3-C).
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/`/g, "&#96;");
 }
 
 export function formatReport(violations: Violation[], format: Format): string {
