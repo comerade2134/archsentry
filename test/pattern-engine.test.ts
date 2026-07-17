@@ -51,4 +51,19 @@ describe("PatternEngine", () => {
     const v = engine.scan(multi, rule);
     expect(v[0]?.line).toBe(3);
   });
+
+  it("reports every violating line, not just the first", () => {
+    const engine = new PatternEngine();
+    const multi: SourceFile[] = [
+      {
+        path: "c.ts",
+        absolutePath: "",
+        content:
+          'db.query("INSERT INTO a");\ndb.query("INSERT INTO b");\ndoThing();\ndb.query("INSERT INTO c");',
+      },
+    ];
+    const v = engine.scan(multi, rule);
+    expect(v).toHaveLength(3);
+    expect(v.map((x) => x.line)).toEqual([1, 2, 4]);
+  });
 });

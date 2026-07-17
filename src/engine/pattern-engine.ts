@@ -73,7 +73,6 @@ export class PatternEngine implements RuleEngine {
             snippet: (lines[i] as string).trim(),
             message: rule.description,
           });
-          break; // one violation per file is enough for v1 triage
         }
       }
     }

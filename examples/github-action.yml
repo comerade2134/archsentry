@@ -1,0 +1,26 @@
+# ArchSentry as a zero-infra GitHub Action (template for YOUR repo).
+# Save this as .github/workflows/archsentry.yml in the repo you want to scan.
+#
+# NOTE: this runs `pnpm dlx archsentry@latest`, which requires the `archsentry`
+# package published to npm. Until that happens, use the hosted GitHub App
+# (https://github.com/comerade2134/archsentry) instead.
+name: ArchSentry Scan
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  archsentry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install ArchSentry CLI
+        run: pnpm dlx archsentry@latest --version
+      - name: Run Scan
+        run: pnpm dlx archsentry scan --config archsentry.yml --path .

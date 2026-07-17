@@ -16,6 +16,7 @@ export function formatReport(violations: Violation[], format: Format): string {
     lines.push(`  • [${v.severity}] ${v.ruleId}  ${v.file}:${v.line}`);
     lines.push(`    ${v.message}`);
     lines.push(`    > ${v.snippet}`);
+    if (v.explanation) lines.push(`    ${v.explanation}`);
     lines.push("");
   }
   return lines.join("\n");

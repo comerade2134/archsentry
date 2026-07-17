@@ -54,7 +54,17 @@ cp .env.example .env      # then fill in APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PAT
 pnpm start               # Probot under tsx + smee-client webhook proxy
 ```
 
-Register the app on GitHub (browser flow or manually), install it on a repo that has `archsentry.yml`, and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
+**Register the app** (one-time):
+1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
+2. Homepage URL: `https://github.com/comerade2134/archsentry`. Webhook URL: your Smee channel (e.g. `https://smee.io/xxxx`); Webhook secret: any string (set it in `.env` as `WEBHOOK_SECRET`).
+3. Permissions: *Repository contents* (read), *Pull requests* (read & write). Subscribe to the **Pull request** event.
+4. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Install the app on the repos you want to guard.
+
+Then install it on a repo that has `archsentry.yml` and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
+
+### As a GitHub Action (zero infra)
+
+Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your repo as `.github/workflows/archsentry.yml`. It runs the CLI on every PR. (Requires `archsentry` published to npm; until then use the GitHub App above.)
 
 ## Explanations (optional, free)
 
