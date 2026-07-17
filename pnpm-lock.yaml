@@ -11,9 +11,6 @@ importers:
       commander:
         specifier: ^12.1.0
         version: 12.1.0
-      probot:
-        specifier: ^14.3.2
-        version: 14.3.2
       yaml:
         specifier: ^2.6.1
         version: 2.9.0
@@ -24,6 +21,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
+      probot:
+        specifier: ^14.3.2
+        version: 14.3.2
       smee-client:
         specifier: ^5.0.0
         version: 5.0.0

@@ -11,6 +11,7 @@ AI coding assistants now write the majority of enterprise code, but the review l
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![CI](https://github.com/comerade2134/archsentry/actions/workflows/ci.yml/badge.svg)
+📖 [Setup guide](SETUP.md) · [Rule examples](archsentry.yml.example)
 
 ## Why not just use SAST?
 
@@ -64,7 +65,7 @@ Then install it on a repo that has `archsentry.yml` and push a PR. See `archsent
 
 ### As a GitHub Action (zero infra)
 
-Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your repo as `.github/workflows/archsentry.yml`. It runs the CLI on every PR. (Requires `archsentry` published to npm; until then use the GitHub App above.)
+Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your repo as `.github/workflows/archsentry.yml`. It installs the published `archsentry` CLI from npm and runs it on every PR — no app registration required.
 
 ## Explanations (optional, free)
 
@@ -123,6 +124,7 @@ When a rule is violated, ArchSentry posts a comment like this on the PR — and 
 - ✅ Deterministic scan engine + CLI
 - ✅ GitHub App (Probot) with `pull_request` handler — verified end-to-end
 - ✅ LLM explanations (OpenRouter free tier by default)
+- ✅ Published to npm (`archsentry`) — `npx archsentry@latest scan` works
 - ⏳ Your design partners & first installs
 
 ## License
