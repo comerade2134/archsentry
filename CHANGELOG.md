@@ -2,7 +2,7 @@
 
 All notable changes to ArchSentry are documented here.
 
-## [0.2.7] - Code quality & open-source polish (Unreleased)
+## [0.2.7] - Code quality & open-source polish - 2026-07-17
 
 Developer-experience and maintainability pass; no detection-rule or config
 changes required.
