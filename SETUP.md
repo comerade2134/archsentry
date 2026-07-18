@@ -7,7 +7,7 @@ Three ways to run ArchSentry. Pick whichever fits your workflow.
 - Node.js >= 18
 - A repo with an `archsentry.yml` contract (see [`archsentry.yml.example`](archsentry.yml.example))
 
-## Option A — GitHub App (hosted, PR comments)
+## Option A — GitHub App (self-host, PR comments)
 
 1. Clone and install:
 
@@ -32,13 +32,32 @@ Three ways to run ArchSentry. Pick whichever fits your workflow.
 
 3. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Set `APP_ID` and `PRIVATE_KEY_PATH` in `.env`.
 4. Install the app on the repos you want to guard.
-5. For local dev, expose the webhook via Smee and start:
+5. For **local dev**, expose the webhook via Smee and start:
 
    ```bash
    pnpm start
    ```
 
    (`smee-client` is included; set `WEBHOOK_PROXY_URL` to your Smee channel.)
+
+> **Production ingress — don't ship Smee.** Smee is a dev relay: the whole webhook
+> ingress then depends on `WEBHOOK_SECRET` being set _and_ the Smee channel URL
+> staying secret. For any real deployment, use **direct delivery** instead — point
+> the GitHub App's Webhook URL at your host's public HTTPS endpoint (e.g.
+> `https://your-host.example.com/`) and leave `WEBHOOK_PROXY_URL` unset. Probot
+> verifies the HMAC with `WEBHOOK_SECRET` either way; direct delivery just removes
+> the relay as a single point of failure.
+
+> **Permission scope.** Posting a top-level PR comment goes through the Issues API,
+> so the App needs **Issues: write** (it can technically create/close issues). If
+> you'd rather not grant that, **use the GitHub Action instead** (Option B) — it
+> needs zero App installation and no Issues permission. A future Check-Run mode
+> (Checks: write only) is planned to narrow the App's footprint further.
+
+> **Trusted-config model.** `archsentry.yml` is trusted config. `semgrep` rules can
+> run arbitrary code on the host (e.g. `pattern-where-python`), so only use contracts
+> you control — your own repo's `archsentry.yml`. Never point ArchSentry at an
+> untrusted third-party contract.
 
 ## Option B — GitHub Action (zero infra, no app)
 
@@ -77,4 +96,4 @@ rules:
 ## Next
 
 - Rule schema & PR-comment format: see the [README](README.md)
-- Public app: install `archsentry-Dev` from its App page
+- Want top-level PR comments without self-hosting? Deploy this repo to any Node host (Fly.io / Railway / Render free tiers all work) and register the GitHub App as described above. If a public `archsentry-Dev` app page exists, you can install that instead — but the guaranteed path is self-hosting.

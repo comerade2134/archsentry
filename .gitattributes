@@ -1,0 +1,7 @@
+# Normalize line endings so format:check (prettier) is stable across OSes.
+# Windows checkouts keep LF in the working tree, matching prettier's default.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary

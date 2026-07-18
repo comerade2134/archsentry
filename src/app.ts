@@ -72,7 +72,9 @@ export async function handlePr(context: PrContext): Promise<void> {
       ref: pull_request.base.sha,
     });
     if (Array.isArray(res.data) || !("content" in res.data)) return;
-    contract = parseContract(Buffer.from(res.data.content, "base64").toString("utf8"));
+    contract = parseContract(Buffer.from(res.data.content, "base64").toString("utf8"), {
+      maxRules: envInt("ARCHSENTRY_MAX_RULES", 1000, log),
+    });
   } catch (e) {
     // No contract file → nothing to enforce. A 404 means the repo simply has no
     // archsentry.yml; any other error is logged (but we still fail open rather

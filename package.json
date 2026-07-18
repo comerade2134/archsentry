@@ -1,6 +1,6 @@
 {
   "name": "archsentry",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Enforce your team's architectural rules on code before merge. Deterministic, config-first, AI-explanation-only.",
   "homepage": "https://github.com/comerade2134/archsentry",
   "repository": {

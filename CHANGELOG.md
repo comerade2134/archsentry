@@ -2,6 +2,26 @@
 
 All notable changes to ArchSentry are documented here.
 
+## [0.2.8] - Launch docs & security hardening - 2026-07-17
+
+Pairs the launch-ready docs with the findings from the latest security review. No
+detection-rule or config changes required.
+
+- **Docs / launch:** added a "Try it in 60 seconds" quickstart (GitHub Action + CLI),
+  a PR-comment SVG visual, and honest self-host App wording; SETUP.md / README now
+  state Smee is dev-only and production should use direct webhook delivery. Added a
+  "Security model" section.
+- **Security hardening (review findings):** `ARCHSENTRY_MAX_RULES` is now actually
+  read (it was referenced in an error message but unused); the CLI walk now enforces
+  a per-file size cap (parity with the App); `requestSignal` uses `AbortController` so
+  the LLM timeout is never dropped on runtimes without `AbortSignal.any`; added
+  `.gitattributes` (`eol=lf`) which fixes the CI `format:check` failure (was a CRLF
+  artifact). Documented the trusted-config model (semgrep rules execute on the host)
+  and the App's `Issues: write` permission scope.
+- **Tests:** added `test/security.test.ts` covering `sanitizeExplanation` (control-char
+  strip + length clamp), `buildPrompt` prompt-injection fencing, and `toPrComment`
+  markdown-injection fencing.
+
 ## [0.2.7] - Code quality & open-source polish - 2026-07-17
 
 Developer-experience and maintainability pass; no detection-rule or config

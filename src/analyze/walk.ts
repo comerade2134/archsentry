@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync, lstatSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { SourceFile } from "../engine/types";
+import { envInt } from "../util/env";
+import { consoleLogger } from "../util/log";
 
 // Skip common build/output/vendor directories so a CLI scan of a monorepo
 // doesn't walk enormous trees (audit P3-4). The GitHub App path never uses this
@@ -25,6 +27,9 @@ const MAX_WALK_DEPTH = 25;
 
 export function walkSourceFiles(root: string): SourceFile[] {
   const out: SourceFile[] = [];
+  // Mirror the GitHub App's per-file guard so a huge/minified blob can't OOM the
+  // CLI scan (security audit, CLI parity). Default 512 KiB; override via env.
+  const MAX_FILE_BYTES = envInt("ARCHSENTRY_MAX_FILE_BYTES", 512 * 1024, consoleLogger);
 
   const visit = (dir: string, depth = 0): void => {
     if (depth > MAX_WALK_DEPTH) return;
@@ -45,6 +50,9 @@ export function walkSourceFiles(root: string): SourceFile[] {
         if (SKIP_DIRS.has(entry)) continue;
         visit(abs, depth + 1);
       } else if (st.isFile()) {
+        // Skip oversized files before reading them into memory (parity with the
+        // App's download-time size guard, audit finding: CLI walk lacked it).
+        if (typeof st.size === "number" && st.size > MAX_FILE_BYTES) continue;
         const rel = relative(root, abs).split("\\").join("/");
         out.push({ path: rel, content: readFileSync(abs, "utf8") });
       }

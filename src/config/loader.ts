@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import type { Contract, Rule, Severity, PatternMatch } from "./types";
 import { consoleLogger } from "../util/log";
+import { envInt } from "../util/env";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
 const VALID_TYPES = ["pattern", "semgrep"] as const;
@@ -9,8 +10,8 @@ const VALID_TYPES = ["pattern", "semgrep"] as const;
 // fail closed rather than silently mis-parsing (consolidated audit sweep).
 const SUPPORTED_VERSIONS = new Set([1]);
 // Bound the ruleset so a malicious/buggy archsentry.yml can't trigger unbounded
-// scan work (consolidated audit sweep).
-const MAX_RULES = 1000;
+// scan work (consolidated audit sweep). Overridable via ARCHSENTRY_MAX_RULES.
+const DEFAULT_MAX_RULES = 1000;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((x) => typeof x === "string");
@@ -31,17 +32,20 @@ export class ConfigError extends Error {
  *
  * This is the single source of truth for config shape: it enforces the schema
  * version, rejects unknown rule keys (with a warning — audit P3-3), validates
- * each rule's fields, and bounds the ruleset size (`MAX_RULES`, audit sweep).
- * On any structural problem it throws {@link ConfigError} with a message safe to
- * surface to the user. The function is pure (no I/O, no mutation of the caller's
- * input), so callers can parse without side effects.
+ * each rule's fields, and bounds the ruleset size (default 1000, overridable via
+ * `ARCHSENTRY_MAX_RULES`). On any structural problem it throws {@link ConfigError}
+ * with a message safe to surface to the user. The function is pure (no I/O, no
+ * mutation of the caller's input), so callers can parse without side effects.
  *
  * @param raw The full YAML text of the contract.
+ * @param opts.maxRules Override for the ruleset size cap (defaults to
+ *   `ARCHSENTRY_MAX_RULES` / 1000). Exposed so tests and hosts can tune it.
  * @returns A fully-typed, validated {@link Contract}.
  * @throws {ConfigError} When the document is missing required fields, declares
  *   an unsupported `version`, or violates a per-rule constraint.
  */
-export function parseContract(raw: string): Contract {
+export function parseContract(raw: string, opts: { maxRules?: number } = {}): Contract {
+  const MAX_RULES = opts.maxRules ?? DEFAULT_MAX_RULES;
   const data = parse(raw);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new ConfigError("Config root must be a YAML mapping with `version` and `rules`.");
@@ -224,5 +228,7 @@ export function loadContract(path: string): Contract {
   } catch (e) {
     throw new ConfigError(`Could not read config at "${path}": ${(e as Error).message}`);
   }
-  return parseContract(raw);
+  return parseContract(raw, {
+    maxRules: envInt("ARCHSENTRY_MAX_RULES", DEFAULT_MAX_RULES, consoleLogger),
+  });
 }
