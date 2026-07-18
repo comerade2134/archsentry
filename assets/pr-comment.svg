@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="300" viewBox="0 0 760 300" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="1" y="1" width="758" height="298" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+  <line x1="1" y1="58" x2="759" y2="58" stroke="#30363d" stroke-width="1"/>
+  <circle cx="34" cy="30" r="16" fill="#58a6ff"/>
+  <text x="34" y="35" fill="#0d1117" font-size="14" font-weight="700" text-anchor="middle">A</text>
+  <text x="60" y="27" fill="#e6edf3" font-size="15" font-weight="700">ArchSentry</text>
+  <text x="60" y="45" fill="#8b949e" font-size="12">commented on a pull request</text>
+
+  <text x="40" y="86" fill="#e6edf3" font-size="14" font-weight="700">ArchSentry — Architectural Rule Violations</text>
+
+  <text x="40" y="116" fill="#f85149" font-size="13" font-weight="600">• no-direct-sql (error) in src/checkout.service.ts:12</text>
+  <text x="56" y="138" fill="#8b949e" font-size="13">All database writes must go through the repository layer.</text>
+
+  <rect x="40" y="150" width="680" height="26" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="52" y="168" fill="#e6edf3" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">const rows = await db.query("INSERT INTO users (...)")</text>
+
+  <text x="40" y="202" fill="#e6edf3" font-size="13">ArchSentry: move this query into the repository layer</text>
+  <text x="40" y="220" fill="#e6edf3" font-size="13">(e.g. repositories/users.ts) instead of calling db.query from a service.</text>
+
+  <text x="40" y="252" fill="#8b949e" font-size="12" font-style="italic">Fix the flagged lines or update archsentry.yml.</text>
+</svg>

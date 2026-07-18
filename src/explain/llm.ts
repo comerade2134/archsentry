@@ -59,7 +59,8 @@ export function buildPrompt(v: Violation, codeContext: string): string {
 // Strip control characters and clamp length of model output before it is ever
 // rendered into a PR comment (audit P2-D). Keeps newlines/tabs/CR for
 // readability. Filters by code point (no control-char regex literal).
-function sanitizeExplanation(s: string): string {
+// Exported only so the sanitization can be unit-tested directly.
+export function sanitizeExplanation(s: string): string {
   const cleaned = [...s]
     .filter((ch) => {
       const code = ch.codePointAt(0) ?? 0;
@@ -74,12 +75,19 @@ function sanitizeExplanation(s: string): string {
 }
 
 // Merge the LLM timeout with an optional caller-supplied signal (e.g. a global
-// pipeline deadline) so either one can abort the request (audit P2-C).
+// pipeline deadline) so either one can abort the request (audit P2-C). Uses an
+// AbortController + setTimeout so it works on every runtime without depending on
+// AbortSignal.timeout / AbortSignal.any availability.
 function requestSignal(external?: AbortSignal): AbortSignal {
-  const base = AbortSignal.timeout(LLM_TIMEOUT_MS);
-  if (!external) return base;
-  if (typeof AbortSignal.any === "function") return AbortSignal.any([base, external]);
-  return external;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+  // Clear the timer once the signal settles so it can't keep the event loop alive.
+  controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return controller.signal;
 }
 
 // OpenAI-compatible chat API (OpenAI itself, or any OpenAI-compatible endpoint
