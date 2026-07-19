@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npm install -g pnpm@10
-      - run: pnpm dlx archsentry@0.2.7 scan --config archsentry.yml --path .
+      - run: pnpm dlx archsentry@latest scan --config archsentry.yml --path .
 ```
 
 **Option 2 — Local CLI.** Point it at any folder:
