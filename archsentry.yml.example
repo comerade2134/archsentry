@@ -38,6 +38,20 @@ rules:
       exclude:
         - "**/*.test.ts"
 
+  # Real-world example: services must not talk to the database directly — that
+  # is the repository layer's job. `paths.include` scopes the rule so repositories
+  # (which are allowed to call `.query()`) are never flagged. Metavariables like
+  # `$DB` match any receiver, so `db.query(...)`, `this.conn.query(...)`, etc. all hit.
+  - id: services-use-repositories
+    type: semgrep
+    severity: error
+    description: "Service classes must access persistence only through repositories."
+    semgrep:
+      languages: ["typescript"]
+      paths:
+        include: ["src/services/**/*.ts"]
+      pattern: $DB.query(...)
+
   # `type: semgrep` rules are handed to the Semgrep CLI (a full AST-aware engine).
   # Install it with `pip install semgrep` (or `uv tool install semgrep`). When the
   # CLI is present, ArchSentry automatically routes `pattern` rules through
